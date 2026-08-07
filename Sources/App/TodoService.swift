@@ -250,17 +250,21 @@ final class TodoService: ObservableObject {
                     store: store,
                     week: &week
                 )
-                try store.save(week, message: AppConfig.commitMessage("上班打卡 \(TodoRules.timeNow()) 地点 \(location)"))
+                try store.save(week, message: AppConfig.commitMessage("clock in \(TodoRules.timeNow()) at \(location)"))
                 _ = try? WeeklySummary.ensure(forToday: date, store: store)
 
                 var notices: [String] = []
                 if !result.scheduledTasksAdded.isEmpty {
-                    notices.append("已添加定时任务：\(result.scheduledTasksAdded.map { $0.project }.joined(separator: "、"))")
+                    notices.append(I18n.t("已添加定时任务：\(result.scheduledTasksAdded.map { $0.project }.joined(separator: "、"))",
+                                          "Scheduled tasks added: \(result.scheduledTasksAdded.map { $0.project }.joined(separator: ", "))"))
                 }
                 if !result.movedFromPrevious.isEmpty {
-                    notices.append("已转移昨日待跟进 \(result.movedFromPrevious.count) 条")
+                    notices.append(I18n.t("已转移昨日待跟进 \(result.movedFromPrevious.count) 条",
+                                          "Moved \(result.movedFromPrevious.count) follow-ups from yesterday"))
                 }
-                self?.finishSync(store: store, date: date, notice: notices.isEmpty ? "上班记录已同步" : notices.joined(separator: "；"))
+                self?.finishSync(store: store, date: date, notice: notices.isEmpty
+                    ? I18n.t("上班记录已同步", "Clock-in synced")
+                    : notices.joined(separator: I18n.t("；", "; ")))
             } catch {
                 Logger.log("clockIn error: \(error.localizedDescription)")
                 self?.finishSync(store: store, date: date, error: error)
@@ -278,14 +282,15 @@ final class TodoService: ObservableObject {
             do {
                 var week = try store.loadWeek(containing: date)
                 let record = try TodoRules.clockOut(today: date, store: store, week: &week)
-                try store.save(week, message: AppConfig.commitMessage("下班打卡 \(record.clockOut ?? "") 时长 \(record.duration ?? "")"))
+                try store.save(week, message: AppConfig.commitMessage("clock out \(record.clockOut ?? "") duration \(record.duration ?? "")"))
                 _ = try? WeeklySummary.ensure(forToday: date, store: store)
                 // Clock-out must push immediately so the follow-up transfer, weekly summary, etc. are all synced.
                 try store.flushPush()
                 self?.finishSync(
                     store: store,
                     date: date,
-                    notice: "已下班 \(record.clockOut ?? "")，时长 \(record.duration ?? "")，已同步到远端"
+                    notice: I18n.t("已下班 \(record.clockOut ?? "")，时长 \(record.duration ?? "")，已同步到远端",
+                                    "Clocked out \(record.clockOut ?? ""), duration \(record.duration ?? ""), synced")
                 )
             } catch {
                 Logger.log("clockOut error: \(error.localizedDescription)")
@@ -299,13 +304,13 @@ final class TodoService: ObservableObject {
     func setLocation(_ loc: String) {
         guard !isSyncing else { return }
         day.time.location = loc
-        persist("更新地点为 \(loc)")
+        persist("update location to \(loc)")
     }
 
     func addTodo(project: String, text: String, toCompleted: Bool = false) {
         guard !isSyncing else { return }
         guard !project.trimmingCharacters(in: .whitespaces).isEmpty else {
-            lastError = "项目名不能为空"
+            lastError = I18n.t("项目名不能为空", "Project name cannot be empty")
             return
         }
         let item = TodoItem(
@@ -317,7 +322,7 @@ final class TodoService: ObservableObject {
         } else {
             day.followup.append(item)
         }
-        persist("添加待办 \(item.display)")
+        persist("add todo \(item.display)")
     }
 
     func deleteTodo(_ item: TodoItem, fromCompleted: Bool = false) {
@@ -327,13 +332,13 @@ final class TodoService: ObservableObject {
         } else {
             day.followup.removeAll { $0.id == item.id }
         }
-        persist("删除待办 \(item.display)")
+        persist("delete todo \(item.display)")
     }
 
     func updateTodo(_ item: TodoItem, project: String, text: String, subItems: [String]) {
         guard !isSyncing else { return }
         guard !project.trimmingCharacters(in: .whitespaces).isEmpty else {
-            lastError = "项目名不能为空"
+            lastError = I18n.t("项目名不能为空", "Project name cannot be empty")
             return
         }
         var updated = item
@@ -345,12 +350,12 @@ final class TodoService: ObservableObject {
         } else if let idx = day.completed.firstIndex(where: { $0.id == item.id }) {
             day.completed[idx] = updated
         }
-        persist("修改待办 \(updated.display)")
+        persist("edit todo \(updated.display)")
     }
 
     func moveTodo(_ item: TodoItem, toCompleted: Bool) {
         guard !isSyncing else { return }
-        let action = toCompleted ? "标记完成" : "移回待办"
+        let action = toCompleted ? "mark done" : "move to todo"
         if toCompleted {
             day.followup.removeAll { $0.id == item.id }
             if !day.completed.contains(where: { $0.id == item.id }) {
@@ -394,12 +399,12 @@ final class TodoService: ObservableObject {
                 }
             }
         }
-        persist("子事项\(wasDone ? "恢复" : "完成") \(updated.display)")
+        persist("subtask \(wasDone ? "restore" : "done") \(updated.display)")
     }
 
     func moveTodos(_ items: [TodoItem], toCompleted: Bool) {
         guard !isSyncing else { return }
-        let action = toCompleted ? "标记完成" : "移回待办"
+        let action = toCompleted ? "mark done" : "move to todo"
         for item in items {
             if toCompleted {
                 day.followup.removeAll { $0.id == item.id }
@@ -409,7 +414,7 @@ final class TodoService: ObservableObject {
                 if !day.followup.contains(where: { $0.id == item.id }) { day.followup.append(item) }
             }
         }
-        persist("\(action) \(items.map { $0.display }.joined(separator: "、"))")
+        persist("\(action) \(items.map { $0.display }.joined(separator: ", "))")
     }
 
     func move(_ item: TodoItem, offset: Int) {
@@ -425,7 +430,7 @@ final class TodoService: ObservableObject {
         } else if day.completed.contains(where: { $0.id == item.id }) {
             reorder(&day.completed)
         }
-        persist("调整待办顺序 \(item.display)")
+        persist("reorder todo \(item.display)")
     }
 
     // MARK: - Background sync
@@ -441,7 +446,7 @@ final class TodoService: ObservableObject {
             do {
                 try store.save(snapshot, message: AppConfig.commitMessage(label))
                 _ = try? WeeklySummary.ensure(forToday: date, store: store)
-                self?.finishSync(store: store, date: date, notice: "已保存")
+                self?.finishSync(store: store, date: date, notice: I18n.t("已保存", "Saved"))
             } catch {
                 Logger.log("persist(\(label)) error: \(error.localizedDescription)")
                 self?.finishSync(store: store, date: date, error: error)
@@ -458,7 +463,7 @@ final class TodoService: ObservableObject {
         syncQueue.async { [weak self] in
             do {
                 try store.flushPush()
-                self?.finishSync(store: store, date: date, notice: "已同步到远端")
+                self?.finishSync(store: store, date: date, notice: I18n.t("已同步到远端", "Synced to remote"))
             } catch {
                 Logger.log("flushPush error: \(error.localizedDescription)")
                 self?.finishSync(store: store, date: date, error: error)

@@ -54,7 +54,7 @@ struct TodoRules {
             var prevDay = prev.day
             prevDay.followup.removeAll { item in prev.items.contains { $0.id == item.id } }
             prevWeek.days = prevWeek.days.map { DateMath.isSameDay($0.date, prevDay.date) ? prevDay : $0 }
-            try store.save(prevWeek, message: AppConfig.commitMessage("move 待跟进 to next workday"))
+            try store.save(prevWeek, message: AppConfig.commitMessage("move follow-ups to next workday"))
 
             day.followup.append(contentsOf: prev.items)
             moved = prev.items
@@ -82,8 +82,7 @@ struct TodoRules {
             store.replace(nextDay, in: &nextWeek)
             day.followup.removeAll()
             store.replace(day, in: &week)
-            try store.save(nextWeek, message: AppConfig.commitMessage("move todos to next workday"))
-        }
+            try store.save(nextWeek, message: AppConfig.commitMessage("move todos to next workday"))        }
         return day.time
     }
 

@@ -30,7 +30,7 @@ struct WeeklySummary {
         } else {
             text += "## \(heading)\n\n" + summary + "\n"
         }
-        try store.saveSummary(text, message: AppConfig.commitMessage("README 补充 \(py)-W\(pw) 周总结"), push: push)
+        try store.saveSummary(text, message: AppConfig.commitMessage("add README summary for \(py)-W\(pw)"), push: push)
         return summary
     }
 
