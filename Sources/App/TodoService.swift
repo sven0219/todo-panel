@@ -26,6 +26,8 @@ final class TodoService: ObservableObject {
     @Published private(set) var appearanceMode: AppearanceMode = .system
     /// Manually specified repo path; empty = auto-detect.
     @Published private(set) var repoPathOverride = ""
+    /// Manually specified config file path; empty = use `<repoPath>/todo.config.json`.
+    @Published private(set) var configPathOverride = ""
 
     /// Effective repo path (override first, otherwise auto-detect).
     var effectiveRepoPath: String? {
@@ -44,7 +46,9 @@ final class TodoService: ObservableObject {
 
     init(store: WeekStore) throws {
         self.store = store
-        AppConfig.load(from: store.repoPath)
+        let configOverride = UserDefaults.standard.string(forKey: "configPathOverride") ?? ""
+        self.configPathOverride = configOverride
+        AppConfig.load(repoPath: store.repoPath, configPath: configOverride)
         let today = Date()
         self.today = today
         self.viewDate = today
@@ -116,6 +120,14 @@ final class TodoService: ObservableObject {
     func setRepoPathOverride(_ value: String) {
         repoPathOverride = value.trimmingCharacters(in: .whitespaces)
         UserDefaults.standard.set(repoPathOverride, forKey: "repoPathOverride")
+    }
+
+    /// Set an explicit config file path (empty = use `<repoPath>/todo.config.json`).
+    /// Reloads the config immediately.
+    func setConfigPathOverride(_ value: String) {
+        configPathOverride = value.trimmingCharacters(in: .whitespaces)
+        UserDefaults.standard.set(configPathOverride, forKey: "configPathOverride")
+        AppConfig.load(repoPath: store.repoPath, configPath: configPathOverride)
     }
 
     func setLaunchAtLogin(_ value: Bool) {

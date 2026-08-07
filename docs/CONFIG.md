@@ -2,6 +2,13 @@
 
 Put a `todo.config.json` in the root of your todo repository to override defaults. **All fields are optional**; missing fields fall back to built-in defaults. Config changes take effect on the next launch (or when you change the repository path).
 
+## Config file location
+
+By default the app looks for `<repo>/todo.config.json`. You can point it elsewhere:
+
+- **Settings → Config file path**: set an explicit path (empty restores the repo-root default)
+- **CLI at launch**: `TodoPanel --config /path/to/todo.config.json` (also works for the repo: `--repo /path/to/repo`)
+
 ## Full Example
 
 ```json

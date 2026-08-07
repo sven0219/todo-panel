@@ -1,15 +1,26 @@
 import SwiftUI
 import AppKit
 
-/// Pick a directory using Finder.
+/// Pick a directory or file using Finder.
 enum PathPicker {
     static func chooseDirectory() -> String? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "选择"
-        panel.message = "选择 todo 仓库目录"
+        panel.prompt = "Choose"
+        panel.message = "Select the todo repository directory"
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url?.path
+    }
+
+    static func chooseFile() -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Select a todo.config.json file"
         guard panel.runModal() == .OK else { return nil }
         return panel.url?.path
     }

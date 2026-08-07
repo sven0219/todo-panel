@@ -1,6 +1,51 @@
 import Foundation
+import SwiftUI
+import AppKit
 
 enum SelfTest {
+    /// Render off-screen screenshots of the main UI states for documentation.
+    /// Usage: TodoPanel --screenshot <outDir> --repo <path-to-demo-repo>
+    @MainActor
+    static func renderScreenshots(outDir: String) {
+        let repo = argValue("--repo") ?? FileManager.default.currentDirectoryPath
+        guard let store = try? WeekStore(repoPath: repo),
+              let svc = try? TodoService(store: store) else {
+            print("screenshot: bad repo \(repo)")
+            exit(1)
+        }
+        let demoDay = DateComponents(calendar: .current, year: 2026, month: 6, day: 12).date!
+        svc.goToDay(demoDay)
+        render(ContentView(service: svc), size: CGSize(width: 380, height: 660), to: "\(outDir)/todo-day.png")
+        svc.setWeekMode(true)
+        render(ContentView(service: svc), size: CGSize(width: 380, height: 660), to: "\(outDir)/todo-week.png")
+        render(SettingsPopover(service: svc), size: CGSize(width: 360, height: 560), to: "\(outDir)/todo-settings.png")
+    }
+
+    @MainActor
+    private static func render<V: View>(_ view: V, size: CGSize, to path: String) {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: view)
+        hosting.frame = NSRect(origin: .zero, size: size)
+        window.contentView = hosting
+        window.layoutIfNeeded()
+        hosting.layoutSubtreeIfNeeded()
+        guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            print("screenshot: failed to create bitmap for \(path)")
+            return
+        }
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        if let png = rep.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: path))
+            print("wrote \(path)")
+        }
+    }
+
+    private static func argValue(_ name: String) -> String? {
+        guard let idx = CommandLine.arguments.firstIndex(of: name),
+              idx + 1 < CommandLine.arguments.count else { return nil }
+        return CommandLine.arguments[idx + 1]
+    }
     /// End-to-end: run clock-in → add todo → clock-out against a real repo, with real git push.
     /// Use on a test branch only.
     static func e2e() -> Never {

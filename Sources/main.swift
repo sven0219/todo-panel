@@ -9,6 +9,24 @@ if CommandLine.arguments.contains("--e2e") {
     SelfTest.e2e()
 }
 
+// Render documentation screenshots: TodoPanel --screenshot <outDir> --repo <demo-repo>
+if let idx = CommandLine.arguments.firstIndex(of: "--screenshot"), idx + 1 < CommandLine.arguments.count {
+    let outDir = CommandLine.arguments[idx + 1]
+    Task { @MainActor in
+        SelfTest.renderScreenshots(outDir: outDir)
+        exit(0)
+    }
+    dispatchMain()
+}
+
+// Optional launch-time overrides: TodoPanel --repo <path> --config <path>
+if let idx = CommandLine.arguments.firstIndex(of: "--repo"), idx + 1 < CommandLine.arguments.count {
+    UserDefaults.standard.set(CommandLine.arguments[idx + 1], forKey: "repoPathOverride")
+}
+if let idx = CommandLine.arguments.firstIndex(of: "--config"), idx + 1 < CommandLine.arguments.count {
+    UserDefaults.standard.set(CommandLine.arguments[idx + 1], forKey: "configPathOverride")
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

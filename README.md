@@ -14,6 +14,12 @@ Turn daily work logging into one click: clock in/out, maintain todo & done lists
 - **Sync strategy**: changes commit locally, pushed in batch every 10 minutes (manual sync button, optional push-per-action, forced push on clock-out, auto retry)
 - **UI**: light/dark override, Chinese/English switching, project name autocomplete, resizable window, collapse-aware height, menu-bar status
 
+## Screenshots
+
+| Day view | Week view | Settings |
+| --- | --- | --- |
+| ![Day view](docs/images/todo-day.png) | ![Week view](docs/images/todo-week.png) | ![Settings](docs/images/todo-settings.png) |
+
 ## Quick Start
 
 ### 1. Prepare a todo repository
@@ -97,3 +103,8 @@ swift run TodoPanel --selftest --sample=<path-to-a-week-file>
 ## License
 
 MIT
+
+## Acknowledgements
+
+This project's code was entirely written by [opencode](https://opencode.ai) with the DeepSeek V4 Flash model.
+

@@ -29,12 +29,19 @@ struct TodoConfig: Codable, Equatable {
     static let `default` = TodoConfig()
 }
 
-/// Global config loaded from `todo.config.json` in the user's repo root; defaults when absent.
+/// Global config loaded from `todo.config.json`; defaults when absent.
 enum AppConfig {
     static var shared = TodoConfig.default
 
-    static func load(from repoPath: String) {
-        let url = URL(fileURLWithPath: repoPath).appendingPathComponent("todo.config.json")
+    /// Load config. If `configPath` is given it is used as-is;
+    /// otherwise `<repoPath>/todo.config.json` is used.
+    static func load(repoPath: String, configPath: String? = nil) {
+        let url: URL
+        if let configPath, !configPath.isEmpty {
+            url = URL(fileURLWithPath: configPath)
+        } else {
+            url = URL(fileURLWithPath: repoPath).appendingPathComponent("todo.config.json")
+        }
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(TodoConfig.self, from: data) else {
             shared = .default

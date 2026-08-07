@@ -217,6 +217,7 @@ struct HeaderBar: View {
 struct SettingsPopover: View {
     @ObservedObject var service: TodoService
     @State private var repoPathInput = ""
+    @State private var configPathInput = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -310,6 +311,33 @@ struct SettingsPopover: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            Divider()
+            Text(I18n.t("配置文件路径", "Config file path"))
+                .font(.caption.bold())
+            HStack(spacing: 6) {
+                TextField(I18n.t("留空 = 仓库根目录 todo.config.json", "Empty = <repo>/todo.config.json"), text: $configPathInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onAppear { configPathInput = service.configPathOverride }
+                Button {
+                    if let p = PathPicker.chooseFile() {
+                        configPathInput = p
+                    }
+                } label: {
+                    Label(I18n.t("选择…", "Choose…"), systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                Button(I18n.t("应用", "Apply")) {
+                    service.setConfigPathOverride(configPathInput)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            Text(I18n.t("也可启动时传入：TodoPanel --config <路径>。", "Or at launch: TodoPanel --config <path>."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
         .frame(width: 320)
