@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build debug tests
+        run: swift build
+
+      - name: Run self tests
+        run: |
+          FIRST=$(find . -name '*.md' -path '*weeks*' | head -1 || true)
+          if [ -n "$FIRST" ]; then
+            .build/debug/TodoPanel --selftest --sample="$FIRST"
+          else
+            .build/debug/TodoPanel --selftest
+          fi
+
+      - name: Build & package .app
+        run: ./build-app.sh
+
+      - name: Zip the app
+        run: |
+          cd dist
+          zip -r TodoPanel-macOS.zip TodoPanel.app
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/TodoPanel-macOS.zip
+          generate_release_notes: true

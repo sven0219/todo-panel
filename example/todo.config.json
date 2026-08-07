@@ -1,0 +1,14 @@
+{
+  "appName": "My Todo",
+  "locations": ["Office", "Home", "Remote"],
+  "scheduledTasks": [
+    { "project": "Report", "text": "Send weekly report", "weekday": 2 },
+    { "project": "Ops", "text": "Check cloud costs", "weekday": 4 },
+    { "project": "Finance", "text": "Renew subscription", "monthDay": 1 },
+    { "project": "Finance", "text": "Send invoice", "monthDay": 3 },
+    { "project": "Report", "text": "Log expenses", "monthDay": 5 },
+    { "project": "Ops", "text": "Top up balance", "monthDay": 20 }
+  ],
+  "commitMessagePrefix": "update:",
+  "defaultLanguage": "system"
+}

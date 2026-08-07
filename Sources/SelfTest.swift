@@ -1,0 +1,219 @@
+import Foundation
+
+enum SelfTest {
+    /// End-to-end: run clock-in → add todo → clock-out against a real repo, with real git push.
+    /// Use on a test branch only.
+    static func e2e() -> Never {
+        let repo = CommandLine.arguments.first { $0.hasPrefix("--repo=") }?
+            .replacingOccurrences(of: "--repo=", with: "")
+            ?? FileManager.default.currentDirectoryPath
+        do {
+            let store = try WeekStore(repoPath: repo)
+            let today = Date()
+            var week = try store.loadWeek(containing: today)
+            let result = try TodoRules.clockIn(today: today, location: "PG", store: store, week: &week)
+            print("clockIn: scheduled=\(result.scheduledTasksAdded.map { $0.text }) moved=\(result.movedFromPrevious.count)")
+            try store.save(week, message: "test: e2e clock in", push: true)
+
+            var w2 = try store.loadWeek(containing: today)
+            var day = store.day(in: &w2, for: today)
+            day.completed.append(TodoItem(project: "E2E", text: "自动化测试条目"))
+            store.replace(day, in: &w2)
+            try store.save(w2, message: "test: e2e add todo", push: true)
+
+            var w3 = try store.loadWeek(containing: today)
+            let rec = try TodoRules.clockOut(today: today, store: store, week: &w3)
+            print("clockOut: in=\(rec.clockIn ?? "-") out=\(rec.clockOut ?? "-") loc=\(rec.location ?? "-") dur=\(rec.duration ?? "-")")
+            try store.save(w3, message: "test: e2e clock out", push: true)
+
+            print("E2E OK")
+            exit(0)
+        } catch {
+            print("E2E FAIL: \(error.localizedDescription)")
+            exit(1)
+        }
+    }
+
+    static func run() -> Never {
+        var failures = 0
+        func check(_ condition: Bool, _ name: String) {
+            if condition {
+                print("PASS  \(name)")
+            } else {
+                failures += 1
+                print("FAIL  \(name)")
+            }
+        }
+
+        do {
+            // Group 1: markdown round-trip
+            let store1 = try makeRepo()
+            store1.pushEnabled = false
+            let mon = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
+            var week = try store1.loadWeek(containing: mon)
+            var monDay = store1.day(in: &week, for: mon)
+            monDay.completed.append(TodoItem(project: "Marriott", text: "payment vault 集成", subItems: ["MIC-67324"]))
+            monDay.completed.append(TodoItem(project: "Hilton Survey", text: "发送报告"))
+            monDay.followup.append(TodoItem(project: "wiredcraft", text: "检查阿里云费用"))
+            monDay.time.clockIn = "09:45"
+            monDay.time.location = "PG → Marriott"
+            monDay.time.clockOut = "18:17"
+            monDay.time.duration = "8h 32m"
+            store1.replace(monDay, in: &week)
+            try store1.save(week, message: "t")
+
+            let reloaded = try store1.loadWeek(containing: mon)
+            check(reloaded.days.count == 1, "round-trip: 1 day")
+            let d = reloaded.days.first!
+            check(d.completed.count == 2, "round-trip: 2 completed")
+            check(d.completed[0].project == "Marriott" && d.completed[0].subItems == ["MIC-67324"], "round-trip: sub items")
+            check(d.time.clockIn == "09:45" && d.time.location == "PG → Marriott" && d.time.clockOut == "18:17" && d.time.duration == "8h 32m", "round-trip: time record")
+            check(d.time.lastLocationName == "Marriott", "round-trip: lastLocationName from multi-location text")
+
+            // Group 2: scheduled tasks
+            let monday = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
+            let mondayTasks = TodoRules.scheduledTasks(on: monday)
+            check(mondayTasks.contains { $0.project == "Report" }, "scheduled: Monday report")
+            let wednesday = DateComponents(calendar: .current, year: 2026, month: 8, day: 12).date!
+            check(TodoRules.scheduledTasks(on: wednesday).contains { $0.text.contains("Check cloud costs") }, "scheduled: Wednesday cloud")
+            let aug3 = DateComponents(calendar: .current, year: 2026, month: 8, day: 3).date!
+            let aug3Tasks = TodoRules.scheduledTasks(on: aug3)
+            check(aug3Tasks.contains { $0.text.contains("Renew subscription") }, "scheduled: Aug 1 (Sat) deferred to Aug 3")
+            let aug5 = DateComponents(calendar: .current, year: 2026, month: 8, day: 5).date!
+            check(TodoRules.scheduledTasks(on: aug5).contains { $0.project == "Report" }, "scheduled: Aug 5 expenses")
+            let aug20 = DateComponents(calendar: .current, year: 2026, month: 8, day: 20).date!
+            check(TodoRules.scheduledTasks(on: aug20).contains { $0.text.contains("Top up balance") }, "scheduled: Aug 20 topup")
+
+            // Group 3: clock-in on a fresh repo
+            let store3 = try makeRepo()
+            store3.pushEnabled = false
+            var w3 = try store3.loadWeek(containing: monday)
+            let result = try TodoRules.clockIn(today: monday, location: "PG", store: store3, week: &w3)
+            check(result.scheduledTasksAdded.count == 1 && result.scheduledTasksAdded.first?.project == "Report", "clock-in: scheduled added")
+            try store3.save(w3, message: "t")
+            let md = w3.days.first(where: { $0.date == monday })!
+            check(md.time.clockIn != nil && md.time.location == "PG", "clock-in: time & location recorded")
+            check(md.followup.count == 1 && md.followup.first?.project == "Report", "clock-in: followup has scheduled item")
+            let fileAfterClockIn = try store3.loadWeek(containing: monday)
+            let dayAfter = fileAfterClockIn.days.first(where: { $0.date == monday })!
+            check(dayAfter.time.location == "PG", "clock-in: location persisted to file")
+
+            // Group 4: previous workday followup moved on clock-in
+            let store4 = try makeRepo()
+            store4.pushEnabled = false
+            let friday = DateComponents(calendar: .current, year: 2026, month: 8, day: 7).date!
+            var w4f = try store4.loadWeek(containing: friday)
+            var fd4 = store4.day(in: &w4f, for: friday)
+            fd4.followup.append(TodoItem(project: "Marriott", text: "上周待办"))
+            store4.replace(fd4, in: &w4f)
+            try store4.save(w4f, message: "t")
+            var w4m = try store4.loadWeek(containing: monday)
+            let r4 = try TodoRules.clockIn(today: monday, location: "Remote", store: store4, week: &w4m)
+            check(r4.movedFromPrevious.contains { $0.text == "上周待办" }, "clock-in: prev workday followup moved")
+            try store4.save(w4m, message: "t")
+            let mondayDay4 = try store4.loadWeek(containing: monday)
+            check(mondayDay4.days.first(where: { $0.date == monday })!.followup.contains { $0.text == "上周待办" }, "clock-in: moved item present on Monday")
+            let fridayAfter4 = try store4.loadWeek(containing: friday)
+            check(fridayAfter4.days.first(where: { $0.date == friday })!.followup.isEmpty, "clock-in: removed from Friday")
+
+            // Group 5: clock-out on Friday moves follow-ups to next Monday (new week auto-created)
+            let store5 = try makeRepo()
+            store5.pushEnabled = false
+            var w5 = try store5.loadWeek(containing: friday)
+            var d5 = store5.day(in: &w5, for: friday)
+            d5.followup.append(TodoItem(project: "Marriott", text: "待办A"))
+            d5.time.clockIn = "09:00"
+            store5.replace(d5, in: &w5)
+            try store5.save(w5, message: "t")
+            var w5b = try store5.loadWeek(containing: friday)
+            let rec = try TodoRules.clockOut(today: friday, store: store5, week: &w5b)
+            check(rec.clockOut != nil, "clock-out: time recorded")
+            try store5.save(w5b, message: "t")
+            let mondayNext = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
+            let nextWeek = try store5.loadWeek(containing: mondayNext)
+            check(nextWeek.days.first(where: { $0.date == mondayNext })?.followup.contains { $0.text == "待办A" } == true, "clock-out: 待跟进 moved to next Monday")
+            let fridayAfter5 = try store5.loadWeek(containing: friday)
+            check(fridayAfter5.days.first(where: { $0.date == friday })?.followup.isEmpty == true, "clock-out: today 待跟进 cleared")
+
+            // Group 5b: day lookups with non-midnight dates (Date()) must reuse the same day
+            let store6 = try makeRepo()
+            store6.pushEnabled = false
+            let now = Date()
+            var w6a = try store6.loadWeek(containing: now)
+            _ = try TodoRules.clockIn(today: now, location: "Remote", store: store6, week: &w6a)
+            try store6.save(w6a, message: "t")
+            var w6b = try store6.loadWeek(containing: now)
+            var d6b = store6.day(in: &w6b, for: now)
+            check(d6b.time.clockIn != nil && d6b.time.location == "Remote", "non-midnight: clock-in preserved on reload")
+            d6b.followup.append(TodoItem(project: "X", text: "y"))
+            store6.replace(d6b, in: &w6b)
+            try store6.save(w6b, message: "t")
+            var w6c = try store6.loadWeek(containing: now)
+            check(w6c.days.count == 1, "non-midnight: no duplicate day sections")
+            let rec6 = try TodoRules.clockOut(today: now, store: store6, week: &w6c)
+            check(rec6.clockIn != nil, "non-midnight: clock-out sees clock-in")
+            try store6.save(w6c, message: "t")
+            let final6 = try store6.loadWeek(containing: now)
+            check(final6.days.count == 1, "non-midnight: single day after clock out")
+
+            // Group 6: duration + weekly summary
+            check(TodoRules.duration(from: "09:45", to: "18:17") == "8h 32m", "duration: normal")
+            check(TodoRules.duration(from: "23:00", to: "01:00") == "2h 0m", "duration: overnight")
+            check(TodoRules.parseDuration("45h 22min") == 45 * 60 + 22, "parseDuration: min suffix")
+            let summary = WeeklySummary.buildSummary(week: reloaded)
+            check(summary.contains("总时长: 8h 32m"), "summary: total duration")
+            check(summary.contains("**Marriott**"), "summary: project grouped")
+
+            // Group 7: serialize real sample stays parseable
+            if let sample = try? String(contentsOfFile: samplePath, encoding: .utf8) {
+                let parsed = try MarkdownCodec.parse(sample, week: 2026, weekNumber: 32,
+                                                     start: DateComponents(calendar: .current, year: 2026, month: 8, day: 3).date!,
+                                                     end: DateComponents(calendar: .current, year: 2026, month: 8, day: 9).date!)
+                check(parsed.days.count > 0, "sample: parses days")
+                let reserialized = MarkdownCodec.serialize(parsed)
+                let parsedAgain = try MarkdownCodec.parse(reserialized, week: 2026, weekNumber: 32,
+                                                          start: parsed.startDate, end: parsed.endDate)
+                check(parsedAgain.days.count == parsed.days.count, "sample: re-parse stable")
+                check(parsedAgain.days.first?.completed.count == parsed.days.first?.completed.count, "sample: item counts stable")
+            } else {
+                check(true, "sample: skip (not found)")
+            }
+        } catch {
+            failures += 1
+            print("FAIL  unexpected error: \(error)")
+        }
+
+        print(failures == 0 ? "\nALL TESTS PASSED" : "\n\(failures) TEST(S) FAILED")
+        exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Create a fresh temp git repo with an AGENTS.md.
+    private static func makeRepo() throws -> WeekStore {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("todopanel-selftest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        try shell("-C", tmp.path, "init", "-q")
+        try "".write(to: tmp.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try shell("-C", tmp.path, "add", "-A")
+        try shell("-C", tmp.path, "commit", "-q", "-m", "init")
+        try shell("-C", tmp.path, "branch", "-M", "main")
+        return try WeekStore(repoPath: tmp.path)
+    }
+
+    private static var samplePath: String {
+        CommandLine.arguments.first { $0.hasPrefix("--sample=") }?.replacingOccurrences(of: "--sample=", with: "") ?? ""
+    }
+
+    @discardableResult
+    private static func shell(_ args: String...) throws -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        try p.run()
+        p.waitUntilExit()
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    }
+}
