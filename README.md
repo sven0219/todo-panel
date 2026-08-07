@@ -57,6 +57,22 @@ swift build -c release
 Locations, scheduled tasks and more can be configured via `todo.config.json` in your repository root; missing fields use built-in defaults.
 See [docs/CONFIG.md](docs/CONFIG.md) for the full reference.
 
+## Troubleshooting
+
+### “Apple could not verify ‘TodoPanel.app’ is free of malware…”
+
+The app is built locally and ad-hoc signed, so macOS Gatekeeper warns on first launch. This is expected — you are not required to trust it, but if you built it yourself (or grabbed it from the [Releases](https://github.com/sven0219/todo-panel/releases) page), do one of the following:
+
+1. **Right-click → Open** the app, then click **Open** in the dialog that appears (one-time confirmation).
+2. Or **System Settings → Privacy & Security** → scroll to the warning → click **Open Anyway**.
+3. Or remove the quarantine flag from the terminal:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/TodoPanel.app
+   ```
+
+To avoid the warning entirely, build from source (`swift build -c release` and run `./build-app.sh`) — then you know exactly what you're running.
+
 ## Docs
 
 - [Configuration docs/CONFIG.md](docs/CONFIG.md)
