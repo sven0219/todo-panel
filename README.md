@@ -63,6 +63,12 @@ See [docs/CONFIG.md](docs/CONFIG.md) for the full reference.
 - [Todo repository spec example/AGENTS.md](example/AGENTS.md)
 - [Example repository example/](example/)
 
+## Working with AI Agents
+
+The `AGENTS.md` in your todo repository doubles as an instruction file for AI coding agents (e.g. [opencode](https://opencode.ai)). An agent reads it to follow the exact same logging rules the app implements — creating week files, recording clock-in/out, moving follow-ups to the next workday, generating weekly summaries, and auto-committing/pushing.
+
+That means you can switch freely between the GUI app and an AI agent to maintain the same data with the same conventions. See [example/AGENTS.md](example/AGENTS.md) for the spec.
+
 ## Release
 
 Tag a version and GitHub Actions builds and publishes it automatically:
