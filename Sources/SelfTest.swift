@@ -245,6 +245,31 @@ enum SelfTest {
             check(dupParsed.days.count == 1, "dedupe: one day after merge")
             check(dupParsed.days.first?.followup.count == 2, "dedupe: items merged")
 
+            // Group 6d: todo.config.json scheduled task CRUD
+            let cfgStore = try makeRepo()
+            cfgStore.pushEnabled = false
+            let cfgURL = cfgStore.repoPath + "/todo.config.json"
+            AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            var cfg = AppConfig.shared
+            cfg.scheduledTasks = [
+                ScheduledTaskConfig(project: "A", text: "one", weekday: 2, monthDay: nil)
+            ]
+            AppConfig.shared = cfg
+            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            check(AppConfig.shared.scheduledTasks.count == 1, "config: save/load tasks")
+            AppConfig.shared.scheduledTasks.append(
+                ScheduledTaskConfig(project: "B", text: "two", weekday: nil, monthDay: 15)
+            )
+            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            check(AppConfig.shared.scheduledTasks.count == 2, "config: append task")
+            AppConfig.shared.scheduledTasks.removeAll { $0.project == "A" }
+            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            check(AppConfig.shared.scheduledTasks.count == 1 && AppConfig.shared.scheduledTasks[0].project == "B",
+                  "config: delete task")
+
             // Group 7: serialize real sample stays parseable
             if let sample = try? String(contentsOfFile: samplePath, encoding: .utf8) {
                 let parsed = try MarkdownCodec.parse(sample, week: 2026, weekNumber: 32,

@@ -28,6 +28,7 @@ final class TodoService: ObservableObject {
     @Published private(set) var repoPathOverride = ""
     /// Manually specified config file path; empty = use `<repoPath>/todo.config.json`.
     @Published private(set) var configPathOverride = ""
+    @Published private(set) var scheduledTasks: [ScheduledTaskConfig] = []
 
     /// Effective repo path (override first, otherwise auto-detect).
     var effectiveRepoPath: String? {
@@ -73,6 +74,7 @@ final class TodoService: ObservableObject {
         I18n.mode = langMode
         self.appearanceMode = appMode
         store.pushEnabled = self.immediatePush
+        reloadScheduledTasks()
         pendingPushCount = store.pendingPushCount()
         loadKnownProjects()
     }
@@ -143,6 +145,96 @@ final class TodoService: ObservableObject {
         configPathOverride = value.trimmingCharacters(in: .whitespaces)
         UserDefaults.standard.set(configPathOverride, forKey: "configPathOverride")
         AppConfig.load(repoPath: store.repoPath, configPath: configPathOverride)
+        reloadScheduledTasks()
+    }
+
+    private func reloadScheduledTasks() {
+        scheduledTasks = AppConfig.shared.scheduledTasks
+    }
+
+    func addScheduledTask(project: String, text: String, weekday: Int?, monthDay: Int?) {
+        guard let task = validatedScheduledTask(project: project, text: text, weekday: weekday, monthDay: monthDay) else { return }
+        persistScheduledTasks(label: "add scheduled task \(task.displayTitle)") { config in
+            config.scheduledTasks.append(task)
+        }
+    }
+
+    func updateScheduledTask(replacingId id: String, project: String, text: String, weekday: Int?, monthDay: Int?) {
+        guard let task = validatedScheduledTask(project: project, text: text, weekday: weekday, monthDay: monthDay) else { return }
+        guard AppConfig.shared.scheduledTasks.contains(where: { $0.id == id }) else {
+            lastError = I18n.t("找不到该任务", "Task not found")
+            return
+        }
+        persistScheduledTasks(label: "edit scheduled task \(task.displayTitle)") { config in
+            guard let idx = config.scheduledTasks.firstIndex(where: { $0.id == id }) else { return }
+            config.scheduledTasks[idx] = task
+        }
+    }
+
+    func deleteScheduledTask(_ task: ScheduledTaskConfig) {
+        persistScheduledTasks(label: "delete scheduled task \(task.displayTitle)") { config in
+            config.scheduledTasks.removeAll { $0.id == task.id }
+        }
+    }
+
+    private func validatedScheduledTask(project: String, text: String, weekday: Int?, monthDay: Int?) -> ScheduledTaskConfig? {
+        let p = project.trimmingCharacters(in: .whitespaces)
+        guard !p.isEmpty else {
+            lastError = I18n.t("项目名不能为空", "Project name cannot be empty")
+            return nil
+        }
+        guard weekday != nil || monthDay != nil else {
+            lastError = I18n.t("请选择重复周期", "Choose a schedule")
+            return nil
+        }
+        if let d = monthDay, !(1...31).contains(d) {
+            lastError = I18n.t("日期需在 1–31 之间", "Day must be 1–31")
+            return nil
+        }
+        lastError = nil
+        return ScheduledTaskConfig(
+            project: p,
+            text: text.trimmingCharacters(in: .whitespaces),
+            weekday: weekday,
+            monthDay: monthDay
+        )
+    }
+
+    private func persistScheduledTasks(label: String, mutate: (inout TodoConfig) -> Void) {
+        guard !isSyncing else { return }
+        let backup = AppConfig.shared
+        var config = AppConfig.shared
+        mutate(&config)
+        AppConfig.shared = config
+        scheduledTasks = config.scheduledTasks
+        beginSync()
+
+        let store = store
+        let configPath = configPathOverride
+        let push = store.pushEnabled
+        let message = AppConfig.commitMessage(label)
+
+        syncQueue.async { [weak self] in
+            do {
+                try AppConfig.save(repoPath: store.repoPath, configPath: configPath)
+                if let rel = AppConfig.relativePathInRepo(repoPath: store.repoPath, configPath: configPath) {
+                    try store.commit(paths: [rel], message: message, push: push)
+                }
+                DispatchQueue.main.async {
+                    self?.lastNotice = I18n.t("定时任务已保存", "Scheduled tasks saved")
+                    self?.lastError = nil
+                    self?.isSyncing = false
+                    self?.refreshPendingCount()
+                }
+            } catch {
+                AppConfig.shared = backup
+                DispatchQueue.main.async {
+                    self?.scheduledTasks = backup.scheduledTasks
+                    self?.lastError = error.localizedDescription
+                    self?.isSyncing = false
+                }
+            }
+        }
     }
 
     func setLaunchAtLogin(_ value: Bool) {

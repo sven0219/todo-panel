@@ -220,6 +220,7 @@ struct SettingsPopover: View {
     @State private var configPathInput = ""
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(I18n.t("外观", "Appearance"))
@@ -343,9 +344,13 @@ struct SettingsPopover: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            ScheduledTasksSection(service: service)
+        }
         }
         .padding(12)
         .frame(width: 320)
+        .frame(maxHeight: 520)
     }
 }
 

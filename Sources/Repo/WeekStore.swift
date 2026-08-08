@@ -159,4 +159,9 @@ final class WeekStore: @unchecked Sendable {
         try text.write(to: url, atomically: true, encoding: .utf8)
         try commitWritten(paths: ["README.md"], message: message, push: push)
     }
+
+    /// Stage and commit paths already written on disk.
+    func commit(paths: [String], message: String, push: Bool? = nil) throws {
+        try commitWritten(paths: paths, message: message, push: push)
+    }
 }

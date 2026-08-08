@@ -2,11 +2,41 @@ import Foundation
 
 /// A single scheduled-task config.
 /// `weekday`: 1=Sunday ... 7=Saturday; `monthDay`: day of month. At least one must be set.
-struct ScheduledTaskConfig: Codable, Equatable {
+struct ScheduledTaskConfig: Codable, Equatable, Identifiable {
     var project: String
     var text: String
     var weekday: Int?
     var monthDay: Int?
+
+    var id: String { "\(project)|\(text)|\(weekday ?? 0)|\(monthDay ?? 0)" }
+
+    /// One-line task title for the UI.
+    var displayTitle: String {
+        text.isEmpty ? project : "\(project) - \(text)"
+    }
+
+    /// When this task triggers (weekday name or day-of-month).
+    var scheduleLabel: String {
+        if let w = weekday {
+            return Self.weekdayLabel(w)
+        }
+        if let d = monthDay {
+            return I18n.t("每月\(d)日", "Day \(d)")
+        }
+        return "—"
+    }
+
+    private static func weekdayLabel(_ weekday: Int) -> String {
+        guard (1...7).contains(weekday) else { return "?" }
+        if I18n.isZH {
+            return ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"][weekday]
+        }
+        return ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekday]
+    }
+
+    static var weekdayOptions: [(value: Int, label: String)] {
+        (1...7).map { ($0, weekdayLabel($0)) }
+    }
 }
 
 /// todo.config.json structure (missing fields fall back to defaults).
@@ -33,15 +63,25 @@ struct TodoConfig: Codable, Equatable {
 enum AppConfig {
     static var shared = TodoConfig.default
 
+    static func configURL(repoPath: String, configPath: String?) -> URL {
+        if let configPath, !configPath.isEmpty {
+            return URL(fileURLWithPath: configPath)
+        }
+        return URL(fileURLWithPath: repoPath).appendingPathComponent("todo.config.json")
+    }
+
+    /// Repo-relative path when the config file lives inside the repo; nil if outside.
+    static func relativePathInRepo(repoPath: String, configPath: String?) -> String? {
+        let repo = URL(fileURLWithPath: repoPath).standardized.path
+        let cfg = configURL(repoPath: repoPath, configPath: configPath).standardized.path
+        guard cfg.hasPrefix(repo + "/") else { return nil }
+        return String(cfg.dropFirst(repo.count + 1))
+    }
+
     /// Load config. If `configPath` is given it is used as-is;
     /// otherwise `<repoPath>/todo.config.json` is used.
     static func load(repoPath: String, configPath: String? = nil) {
-        let url: URL
-        if let configPath, !configPath.isEmpty {
-            url = URL(fileURLWithPath: configPath)
-        } else {
-            url = URL(fileURLWithPath: repoPath).appendingPathComponent("todo.config.json")
-        }
+        let url = configURL(repoPath: repoPath, configPath: configPath)
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(TodoConfig.self, from: data) else {
             shared = .default
@@ -55,6 +95,19 @@ enum AppConfig {
             commitMessagePrefix: decoded.commitMessagePrefix.isEmpty ? def.commitMessagePrefix : decoded.commitMessagePrefix,
             defaultLanguage: decoded.defaultLanguage.isEmpty ? def.defaultLanguage : decoded.defaultLanguage
         )
+    }
+
+    /// Write the in-memory config to disk.
+    static func save(repoPath: String, configPath: String?) throws {
+        let url = configURL(repoPath: repoPath, configPath: configPath)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(shared)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: .atomic)
     }
 
     static func commitMessage(_ text: String) -> String {
