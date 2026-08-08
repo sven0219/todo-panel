@@ -47,8 +47,12 @@ final class GitManager {
         }
         let result = group.wait(timeout: .now() + timeout)
         if result == .timedOut {
-            process.terminate()
-            group.wait()
+            process.interrupt()
+            _ = group.wait(timeout: .now() + 2)
+            if process.isRunning {
+                process.terminate()
+                _ = group.wait(timeout: .now() + 3)
+            }
             return ("命令超时（\(Int(timeout))s），已终止", 124)
         }
 

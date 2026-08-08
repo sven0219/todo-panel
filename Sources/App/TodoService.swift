@@ -39,6 +39,7 @@ final class TodoService: ObservableObject {
     let store: WeekStore
     private var week: WeekFile
     private let syncQueue = DispatchQueue(label: "com.todopanel.sync", qos: .userInitiated)
+    private var syncWatchdog: DispatchWorkItem?
 
     init(store: WeekStore) throws {
         self.store = store
@@ -84,7 +85,7 @@ final class TodoService: ObservableObject {
         let store = store
         syncQueue.async { [weak self] in
             let projects = store.knownProjects()
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 self?.knownProjects = projects
             }
         }
@@ -220,18 +221,17 @@ final class TodoService: ObservableObject {
                 if let rel = AppConfig.relativePathInRepo(repoPath: store.repoPath, configPath: configPath) {
                     try store.commit(paths: [rel], message: message, push: push)
                 }
-                DispatchQueue.main.async {
-                    self?.lastNotice = I18n.t("定时任务已保存", "Scheduled tasks saved")
-                    self?.lastError = nil
-                    self?.isSyncing = false
-                    self?.refreshPendingCount()
+                Task { @MainActor [weak self] in
+                    self?.completeSync(
+                        notice: I18n.t("定时任务已保存", "Scheduled tasks saved"),
+                        refreshPending: true
+                    )
                 }
             } catch {
                 AppConfig.shared = backup
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
                     self?.scheduledTasks = backup.scheduledTasks
-                    self?.lastError = error.localizedDescription
-                    self?.isSyncing = false
+                    self?.completeSync(error: error, refreshPending: false)
                 }
             }
         }
@@ -594,9 +594,48 @@ final class TodoService: ObservableObject {
     }
 
     private func beginSync() {
+        syncWatchdog?.cancel()
         isSyncing = true
         lastError = nil
         lastNotice = nil
+
+        let watchdog = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.isSyncing else { return }
+                Logger.log("sync watchdog: timed out")
+                self.completeSync(
+                    error: StoreError(message: I18n.t("同步超时，请稍后重试", "Sync timed out; try again later")),
+                    refreshPending: true
+                )
+            }
+        }
+        syncWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: watchdog)
+    }
+
+    /// Apply sync completion on the main actor (always clears `isSyncing`).
+    private func completeSync(
+        week refreshedWeek: WeekFile? = nil,
+        day refreshedDay: DayRecord? = nil,
+        pending: Int? = nil,
+        notice: String? = nil,
+        error: Error? = nil,
+        refreshPending: Bool = false
+    ) {
+        syncWatchdog?.cancel()
+        if let refreshedWeek, let refreshedDay {
+            week = refreshedWeek
+            day = refreshedDay
+        }
+        if let pending {
+            pendingPushCount = pending
+        } else if refreshPending {
+            refreshPendingCount()
+        }
+        lastNotice = notice
+        lastError = error?.localizedDescription
+        isSyncing = false
+        if weekMode { refreshWeek() }
     }
 
     nonisolated private func finishSync(
@@ -609,21 +648,22 @@ final class TodoService: ObservableObject {
         do {
             var refreshedWeek = try store.loadWeek(containing: date)
             let refreshedDay = store.day(in: &refreshedWeek, for: date)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.week = refreshedWeek
-                self.day = refreshedDay
-                self.pendingPushCount = pending
-                self.lastNotice = notice
-                self.lastError = error?.localizedDescription
-                self.isSyncing = false
-                if self.weekMode { self.refreshWeek() }
+            Task { @MainActor [weak self] in
+                self?.completeSync(
+                    week: refreshedWeek,
+                    day: refreshedDay,
+                    pending: pending,
+                    notice: notice,
+                    error: error
+                )
             }
-        } catch {
-            DispatchQueue.main.async { [weak self] in
-                self?.pendingPushCount = pending
-                self?.lastError = error.localizedDescription
-                self?.isSyncing = false
+        } catch let loadError {
+            Task { @MainActor [weak self] in
+                self?.completeSync(
+                    pending: pending,
+                    notice: notice,
+                    error: error ?? loadError
+                )
             }
         }
     }
@@ -631,9 +671,9 @@ final class TodoService: ObservableObject {
     /// Refresh the unsynced count from git (runs in background).
     func refreshPendingCount() {
         let store = store
-        syncQueue.async { [weak self] in
+        syncQueue.async {
             let count = store.pendingPushCount()
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 self?.pendingPushCount = count
             }
         }
