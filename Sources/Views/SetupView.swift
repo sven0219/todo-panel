@@ -29,6 +29,7 @@ enum PathPicker {
 /// Setup screen shown at launch when no repo is found.
 struct SetupView: View {
     @State private var path = ""
+    @State private var error: String?
     let onComplete: () -> Void
 
     var body: some View {
@@ -47,6 +48,11 @@ struct SetupView: View {
                 .fixedSize(horizontal: false, vertical: true)
             TextField(I18n.t("例如 /Users/you/work/todo", "e.g. /Users/you/work/todo"), text: $path)
                 .textFieldStyle(.roundedBorder)
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
             HStack(spacing: 6) {
                 Button {
                     if let p = PathPicker.chooseDirectory() {
@@ -61,7 +67,13 @@ struct SetupView: View {
                     NSApp.terminate(nil)
                 }
                 Button(I18n.t("保存并启动", "Save & Launch")) {
-                    UserDefaults.standard.set(path.trimmingCharacters(in: .whitespaces), forKey: "repoPathOverride")
+                    let trimmed = path.trimmingCharacters(in: .whitespaces)
+                    guard WeekStore.resolveRepoPath(override: trimmed) != nil else {
+                        error = I18n.t("无法打开该仓库路径", "Cannot open that repo path")
+                        return
+                    }
+                    error = nil
+                    UserDefaults.standard.set(trimmed, forKey: "repoPathOverride")
                     onComplete()
                 }
                 .buttonStyle(.borderedProminent)

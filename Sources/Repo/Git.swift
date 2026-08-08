@@ -68,9 +68,10 @@ final class GitManager {
         return result.output
     }
 
-    /// Stage everything and commit locally. No remote interaction.
-    func commit(message: String) throws {
-        _ = try runOrThrow(["add", "-A"])
+    /// Stage the given repo-relative paths and commit locally. No remote interaction.
+    func commit(message: String, paths: [String]) throws {
+        guard !paths.isEmpty else { return }
+        _ = try runOrThrow(["add", "--"] + paths)
         let commit = run(["commit", "-m", message])
         if commit.status != 0
             && !commit.output.contains("nothing to commit")
@@ -129,8 +130,8 @@ final class GitManager {
         return lines.suffix(6).joined(separator: "\n")
     }
 
-    func commitAndPush(message: String) throws {
-        try commit(message: message)
+    func commitAndPush(message: String, paths: [String]) throws {
+        try commit(message: message, paths: paths)
         try push()
     }
 

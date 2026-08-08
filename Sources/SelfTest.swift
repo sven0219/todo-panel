@@ -67,9 +67,11 @@ enum SelfTest {
             try store.save(w2, message: "test: e2e add todo", push: true)
 
             var w3 = try store.loadWeek(containing: today)
-            let rec = try TodoRules.clockOut(today: today, store: store, week: &w3)
-            print("clockOut: in=\(rec.clockIn ?? "-") out=\(rec.clockOut ?? "-") loc=\(rec.location ?? "-") dur=\(rec.duration ?? "-")")
-            try store.save(w3, message: "test: e2e clock out", push: true)
+            let outResult = try TodoRules.clockOut(today: today, store: store, week: &w3)
+            print("clockOut: in=\(outResult.record.clockIn ?? "-") out=\(outResult.record.clockOut ?? "-") loc=\(outResult.record.location ?? "-") dur=\(outResult.record.duration ?? "-")")
+            var weeks3 = [w3]
+            if let next = outResult.nextWeekToSave { weeks3.append(next) }
+            try store.save(weeks3, message: "test: e2e clock out", push: true)
 
             print("E2E OK")
             exit(0)
@@ -155,7 +157,9 @@ enum SelfTest {
             var w4m = try store4.loadWeek(containing: monday)
             let r4 = try TodoRules.clockIn(today: monday, location: "Remote", store: store4, week: &w4m)
             check(r4.movedFromPrevious.contains { $0.text == "上周待办" }, "clock-in: prev workday followup moved")
-            try store4.save(w4m, message: "t")
+            var weeks4 = [w4m]
+            if let prev = r4.prevWeekToSave { weeks4.append(prev) }
+            try store4.save(weeks4, message: "t")
             let mondayDay4 = try store4.loadWeek(containing: monday)
             check(mondayDay4.days.first(where: { $0.date == monday })!.followup.contains { $0.text == "上周待办" }, "clock-in: moved item present on Monday")
             let fridayAfter4 = try store4.loadWeek(containing: friday)
@@ -171,9 +175,11 @@ enum SelfTest {
             store5.replace(d5, in: &w5)
             try store5.save(w5, message: "t")
             var w5b = try store5.loadWeek(containing: friday)
-            let rec = try TodoRules.clockOut(today: friday, store: store5, week: &w5b)
-            check(rec.clockOut != nil, "clock-out: time recorded")
-            try store5.save(w5b, message: "t")
+            let outResult5 = try TodoRules.clockOut(today: friday, store: store5, week: &w5b)
+            check(outResult5.record.clockOut != nil, "clock-out: time recorded")
+            var weeks5 = [w5b]
+            if let next = outResult5.nextWeekToSave { weeks5.append(next) }
+            try store5.save(weeks5, message: "t")
             let mondayNext = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
             let nextWeek = try store5.loadWeek(containing: mondayNext)
             check(nextWeek.days.first(where: { $0.date == mondayNext })?.followup.contains { $0.text == "待办A" } == true, "clock-out: 待跟进 moved to next Monday")
@@ -195,9 +201,11 @@ enum SelfTest {
             try store6.save(w6b, message: "t")
             var w6c = try store6.loadWeek(containing: now)
             check(w6c.days.count == 1, "non-midnight: no duplicate day sections")
-            let rec6 = try TodoRules.clockOut(today: now, store: store6, week: &w6c)
-            check(rec6.clockIn != nil, "non-midnight: clock-out sees clock-in")
-            try store6.save(w6c, message: "t")
+            let outResult6 = try TodoRules.clockOut(today: now, store: store6, week: &w6c)
+            check(outResult6.record.clockIn != nil, "non-midnight: clock-out sees clock-in")
+            var weeks6 = [w6c]
+            if let next = outResult6.nextWeekToSave { weeks6.append(next) }
+            try store6.save(weeks6, message: "t")
             let final6 = try store6.loadWeek(containing: now)
             check(final6.days.count == 1, "non-midnight: single day after clock out")
 
@@ -208,6 +216,34 @@ enum SelfTest {
             let summary = WeeklySummary.buildSummary(week: reloaded)
             check(summary.contains("总时长: 8h 32m"), "summary: total duration")
             check(summary.contains("**Marriott**"), "summary: project grouped")
+
+            // Group 6b: English time labels round-trip
+            let prevLang = I18n.mode
+            I18n.mode = .en
+            let enWeek = WeekFile(year: 2026, week: 33, startDate: mon, endDate: mon, days: [d])
+            let enText = MarkdownCodec.serialize(enWeek)
+            check(enText.contains("Clock-in:") && enText.contains("Clock-out:"), "i18n: English time labels on serialize")
+            let enParsed = try MarkdownCodec.parse(enText, week: 2026, weekNumber: 33, start: mon, end: mon)
+            check(enParsed.days.first?.time.clockIn == "09:45", "i18n: English time labels parse")
+            I18n.mode = prevLang
+
+            // Group 6c: duplicate day headings merge on parse
+            let dupMd = """
+            # 2026-W33 Weekly Log
+
+            ## 2026-08-10 Mon
+
+            ### Follow-up
+            - **A** - first
+
+            ## 2026-08-10 Mon
+
+            ### Follow-up
+            - **B** - second
+            """
+            let dupParsed = try MarkdownCodec.parse(dupMd, week: 2026, weekNumber: 33, start: mon, end: mon)
+            check(dupParsed.days.count == 1, "dedupe: one day after merge")
+            check(dupParsed.days.first?.followup.count == 2, "dedupe: items merged")
 
             // Group 7: serialize real sample stays parseable
             if let sample = try? String(contentsOfFile: samplePath, encoding: .utf8) {

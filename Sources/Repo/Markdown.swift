@@ -66,8 +66,30 @@ enum MarkdownCodec {
             flushBuffer(into: &day)
             file.days.append(day)
         }
+        file.days = deduplicateDays(file.days)
         file.days.sort { $0.date > $1.date }
         return file
+    }
+
+    /// Merge duplicate day sections (same calendar date) from hand-edited files.
+    private static func deduplicateDays(_ days: [DayRecord]) -> [DayRecord] {
+        var byDay: [Date: DayRecord] = [:]
+        for day in days {
+            let key = DateMath.startOfDay(day.date)
+            if var existing = byDay[key] {
+                existing.completed.append(contentsOf: day.completed)
+                existing.uncompleted.append(contentsOf: day.uncompleted)
+                existing.followup.append(contentsOf: day.followup)
+                if day.time.clockIn != nil { existing.time.clockIn = day.time.clockIn }
+                if day.time.location != nil { existing.time.location = day.time.location }
+                if day.time.clockOut != nil { existing.time.clockOut = day.time.clockOut }
+                if day.time.duration != nil { existing.time.duration = day.time.duration }
+                byDay[key] = existing
+            } else {
+                byDay[key] = day
+            }
+        }
+        return Array(byDay.values)
     }
 
     private enum Category {
@@ -204,10 +226,10 @@ enum MarkdownCodec {
 
     private static func serializeTime(_ time: TimeRecord) -> [String]? {
         var lines: [String] = []
-        if let inTime = time.clockIn { lines.append("- 上班: \(inTime)") }
-        if let loc = time.location { lines.append("- 地点: \(loc)") }
-        if let out = time.clockOut { lines.append("- 下班: \(out)") }
-        if let dur = time.duration { lines.append("- 时长: \(dur)") }
+        if let inTime = time.clockIn { lines.append("- \(I18n.t("上班", "Clock-in")): \(inTime)") }
+        if let loc = time.location { lines.append("- \(I18n.t("地点", "Location")): \(loc)") }
+        if let out = time.clockOut { lines.append("- \(I18n.t("下班", "Clock-out")): \(out)") }
+        if let dur = time.duration { lines.append("- \(I18n.t("时长", "Duration")): \(dur)") }
         return lines.isEmpty ? nil : lines
     }
 

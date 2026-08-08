@@ -252,7 +252,10 @@ struct SettingsPopover: View {
                 .fixedSize()
             }
             Divider()
-            Toggle(I18n.t("每次操作立即推送", "Push on every action"), isOn: $service.immediatePush)
+            Toggle(I18n.t("每次操作立即推送", "Push on every action"), isOn: Binding(
+                get: { service.immediatePush },
+                set: { service.setImmediatePush($0) }
+            ))
             Text(I18n.t("关闭时：操作先本地提交，每 10 分钟统一推送，退出时自动推送。",
                         "When off: changes commit locally, pushed together every 10 minutes, and flushed on quit."))
                 .font(.caption2)
@@ -294,7 +297,9 @@ struct SettingsPopover: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 Button(I18n.t("应用", "Apply")) {
-                    service.setRepoPathOverride(repoPathInput)
+                    if !service.setRepoPathOverride(repoPathInput) {
+                        repoPathInput = service.repoPathOverride
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

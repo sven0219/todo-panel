@@ -104,4 +104,12 @@ struct WeekFile {
 struct ClockInResult {
     var scheduledTasksAdded: [TodoItem]
     var movedFromPrevious: [TodoItem]
+    /// Previous ISO week file to save together with the current week (follow-up removal).
+    var prevWeekToSave: WeekFile?
+}
+
+struct ClockOutResult {
+    var record: TimeRecord
+    /// Next ISO week file to save together with the current week (follow-up transfer).
+    var nextWeekToSave: WeekFile?
 }

@@ -28,6 +28,36 @@ final class WeekStore: @unchecked Sendable {
         return yearDir.appendingPathComponent(ISOWeek.fileName(year: file.year, week: file.week, start: file.startDate, end: file.endDate))
     }
 
+    /// Repo-relative path for a week file (for scoped git add).
+    func relativePath(for file: WeekFile) -> String {
+        url(for: file).path.replacingOccurrences(of: repoPath + "/", with: "")
+    }
+
+    /// Returns a usable repo path, or nil if override/auto-detect is invalid.
+    static func resolveRepoPath(override: String) -> String? {
+        let path = override.isEmpty ? RepoLocator.locate() : override
+        guard let path, (try? WeekStore(repoPath: path)) != nil else { return nil }
+        return path
+    }
+
+    @discardableResult
+    private func write(_ file: WeekFile) throws -> String {
+        let url = self.url(for: file)
+        let content = MarkdownCodec.serialize(file)
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+        return relativePath(for: file)
+    }
+
+    private func commitWritten(paths: [String], message: String, push: Bool?) throws {
+        guard !paths.isEmpty else { return }
+        if push ?? pushEnabled {
+            try git.commitAndPush(message: message, paths: paths)
+        } else {
+            try git.commit(message: message, paths: paths)
+        }
+    }
+
     /// Load (or create) the week file containing `date`.
     func loadWeek(containing date: Date) throws -> WeekFile {
         let (year, weekNum, start, end) = ISOWeek.components(for: date)
@@ -61,18 +91,18 @@ final class WeekStore: @unchecked Sendable {
         week.days.sort { $0.date > $1.date }
     }
 
-    /// Write file, always commit locally. Push only when enabled (`push ?? pushEnabled`).
-    /// Pass `push: false` for batch mode (commit only, flush later).
+    /// Write file(s), always commit locally in one commit. Push only when enabled (`push ?? pushEnabled`).
     func save(_ file: WeekFile, message: String, push: Bool? = nil) throws {
-        let url = self.url(for: file)
-        let content = MarkdownCodec.serialize(file)
-        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try content.write(to: url, atomically: true, encoding: .utf8)
-        if push ?? pushEnabled {
-            try git.commitAndPush(message: message)
-        } else {
-            try git.commit(message: message)
+        try save([file], message: message, push: push)
+    }
+
+    /// Write multiple week files atomically in a single git commit.
+    func save(_ files: [WeekFile], message: String, push: Bool? = nil) throws {
+        var paths: [String] = []
+        for file in files {
+            paths.append(try write(file))
         }
+        try commitWritten(paths: paths, message: message, push: push)
     }
 
     /// Pull + push any locally committed (but not yet pushed) changes.
@@ -127,10 +157,6 @@ final class WeekStore: @unchecked Sendable {
     func saveSummary(_ text: String, message: String, push: Bool? = nil) throws {
         let url = URL(fileURLWithPath: repoPath).appendingPathComponent("README.md")
         try text.write(to: url, atomically: true, encoding: .utf8)
-        if push ?? pushEnabled {
-            try git.commitAndPush(message: message)
-        } else {
-            try git.commit(message: message)
-        }
+        try commitWritten(paths: ["README.md"], message: message, push: push)
     }
 }

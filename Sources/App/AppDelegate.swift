@@ -20,7 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
-        if let repoPath = Self.effectiveRepoPath(),
+        let override = UserDefaults.standard.string(forKey: "repoPathOverride") ?? ""
+        if let repoPath = WeekStore.resolveRepoPath(override: override),
            let store = try? WeekStore(repoPath: repoPath),
            let svc = try? TodoService(store: store) {
             service = svc
@@ -37,8 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Repo path: user override first, otherwise auto-detect.
     private static func effectiveRepoPath() -> String? {
         let override = UserDefaults.standard.string(forKey: "repoPathOverride") ?? ""
-        if !override.isEmpty { return override }
-        return RepoLocator.locate()
+        return WeekStore.resolveRepoPath(override: override)
     }
 
     /// Subscribe to service state (always-on-top, status item, path changes).
@@ -72,17 +72,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.service?.refreshTodayIfNeeded()
+            self?.updateStatusItem()
+        }
+    }
+
     /// Rebuild the service when the repo path changes (takes effect immediately); keep the old one and show an error on failure.
     private func reloadServiceIfNeeded() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let repoPath = Self.effectiveRepoPath() else {
-                self.service.lastError = "仓库路径无效，已保持原路径"
+            let override = self.service.repoPathOverride
+            guard let repoPath = WeekStore.resolveRepoPath(override: override) else {
+                self.service.lastError = I18n.t("仓库路径无效，已保持原路径", "Invalid repo path; kept the previous one")
                 return
             }
             guard let newStore = try? WeekStore(repoPath: repoPath),
                   let newService = try? TodoService(store: newStore) else {
-                self.service.lastError = "无法打开该仓库路径，已保持原路径"
+                self.service.lastError = I18n.t("无法打开该仓库路径，已保持原路径", "Cannot open that repo path; kept the previous one")
                 return
             }
             self.service = newService
@@ -161,7 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
-                self?.service.refreshPendingCount()
+                self?.service?.refreshTodayIfNeeded()
+                self?.service?.refreshPendingCount()
                 self?.updateStatusItem()
             }
         }
@@ -278,8 +287,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Setup complete: switch to the normal UI in place (no process relaunch).
     private func finishSetup() {
         Task { @MainActor [weak self] in
-            guard let self,
-                  let repoPath = Self.effectiveRepoPath(),
+            guard let self else { return }
+            let override = UserDefaults.standard.string(forKey: "repoPathOverride") ?? ""
+            guard let repoPath = WeekStore.resolveRepoPath(override: override),
                   let store = try? WeekStore(repoPath: repoPath),
                   let svc = try? TodoService(store: store) else {
                 return

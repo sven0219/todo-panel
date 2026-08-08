@@ -49,23 +49,25 @@ struct TodoRules {
         store.replace(day, in: &week)
 
         var moved: [TodoItem] = []
+        var prevWeekToSave: WeekFile?
         if let prev = try previousWorkdayFollowup(before: today, store: store), !prev.items.isEmpty, !dayHadFollowup {
             var prevWeek = prev.week
             var prevDay = prev.day
             prevDay.followup.removeAll { item in prev.items.contains { $0.id == item.id } }
             prevWeek.days = prevWeek.days.map { DateMath.isSameDay($0.date, prevDay.date) ? prevDay : $0 }
-            try store.save(prevWeek, message: AppConfig.commitMessage("move follow-ups to next workday"))
+            prevWeekToSave = prevWeek
 
             day.followup.append(contentsOf: prev.items)
             moved = prev.items
             store.replace(day, in: &week)
         }
-        return ClockInResult(scheduledTasksAdded: scheduledAdded, movedFromPrevious: moved)
+        return ClockInResult(scheduledTasksAdded: scheduledAdded, movedFromPrevious: moved,
+                            prevWeekToSave: prevWeekToSave)
     }
 
     // MARK: - Clock out
 
-    static func clockOut(today: Date, store: WeekStore, week: inout WeekFile) throws -> TimeRecord {
+    static func clockOut(today: Date, store: WeekStore, week: inout WeekFile) throws -> ClockOutResult {
         var day = store.day(in: &week, for: today)
         day.time.clockOut = Self.timeNow()
         if let start = day.time.clockIn {
@@ -74,6 +76,7 @@ struct TodoRules {
         store.replace(day, in: &week)
 
         // Move today's follow-ups to the next workday.
+        var nextWeekToSave: WeekFile?
         if !day.followup.isEmpty {
             let next = DateMath.nextWorkday(after: today)
             var nextWeek = try store.loadWeek(containing: next)
@@ -82,8 +85,9 @@ struct TodoRules {
             store.replace(nextDay, in: &nextWeek)
             day.followup.removeAll()
             store.replace(day, in: &week)
-            try store.save(nextWeek, message: AppConfig.commitMessage("move todos to next workday"))        }
-        return day.time
+            nextWeekToSave = nextWeek
+        }
+        return ClockOutResult(record: day.time, nextWeekToSave: nextWeekToSave)
     }
 
     // MARK: - Previous workday follow-ups

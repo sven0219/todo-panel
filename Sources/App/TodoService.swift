@@ -31,14 +31,9 @@ final class TodoService: ObservableObject {
 
     /// Effective repo path (override first, otherwise auto-detect).
     var effectiveRepoPath: String? {
-        repoPathOverride.isEmpty ? RepoLocator.locate() : repoPathOverride
+        WeekStore.resolveRepoPath(override: repoPathOverride)
     }
-    @Published var immediatePush: Bool {
-        didSet {
-            UserDefaults.standard.set(immediatePush, forKey: "immediatePush")
-            store.pushEnabled = immediatePush
-        }
-    }
+    @Published private(set) var immediatePush: Bool
 
     let store: WeekStore
     private var week: WeekFile
@@ -101,6 +96,19 @@ final class TodoService: ObservableObject {
     var locations: [String] { AppConfig.shared.locations }
     var appName: String { AppConfig.shared.appName }
 
+    /// Advance the today anchor when the calendar day rolls over (menu-bar apps stay open overnight).
+    func refreshTodayIfNeeded() {
+        let now = Date()
+        guard !DateMath.isSameDay(today, now) else { return }
+        today = now
+    }
+
+    func setImmediatePush(_ value: Bool) {
+        immediatePush = value
+        UserDefaults.standard.set(value, forKey: "immediatePush")
+        store.pushEnabled = value
+    }
+
     /// Today's worked time: recorded duration if clocked out, else live elapsed since clock-in.
     var workedHoursText: String {
         if let dur = day.time.duration, !dur.isEmpty {
@@ -117,9 +125,16 @@ final class TodoService: ObservableObject {
         UserDefaults.standard.set(value, forKey: "alwaysOnTop")
     }
 
-    func setRepoPathOverride(_ value: String) {
-        repoPathOverride = value.trimmingCharacters(in: .whitespaces)
-        UserDefaults.standard.set(repoPathOverride, forKey: "repoPathOverride")
+    func setRepoPathOverride(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard WeekStore.resolveRepoPath(override: trimmed) != nil else {
+            lastError = I18n.t("无法打开该仓库路径", "Cannot open that repo path")
+            return false
+        }
+        repoPathOverride = trimmed
+        UserDefaults.standard.set(trimmed, forKey: "repoPathOverride")
+        lastError = nil
+        return true
     }
 
     /// Set an explicit config file path (empty = use `<repoPath>/todo.config.json`).
@@ -167,6 +182,7 @@ final class TodoService: ObservableObject {
 
     func goToday() {
         guard !isSyncing else { return }
+        refreshTodayIfNeeded()
         setViewDate(today)
     }
 
@@ -237,6 +253,7 @@ final class TodoService: ObservableObject {
 
     func clockIn(location: String) {
         guard !isSyncing else { return }
+        refreshTodayIfNeeded()
         beginSync()
         let store = store
         let date = viewDate
@@ -250,7 +267,9 @@ final class TodoService: ObservableObject {
                     store: store,
                     week: &week
                 )
-                try store.save(week, message: AppConfig.commitMessage("clock in \(TodoRules.timeNow()) at \(location)"))
+                var weeks = [week]
+                if let prev = result.prevWeekToSave { weeks.append(prev) }
+                try store.save(weeks, message: AppConfig.commitMessage("clock in \(TodoRules.timeNow()) at \(location)"))
                 _ = try? WeeklySummary.ensure(forToday: date, store: store)
 
                 var notices: [String] = []
@@ -274,6 +293,7 @@ final class TodoService: ObservableObject {
 
     func clockOut() {
         guard !isSyncing else { return }
+        refreshTodayIfNeeded()
         beginSync()
         let store = store
         let date = viewDate
@@ -281,16 +301,18 @@ final class TodoService: ObservableObject {
         syncQueue.async { [weak self] in
             do {
                 var week = try store.loadWeek(containing: date)
-                let record = try TodoRules.clockOut(today: date, store: store, week: &week)
-                try store.save(week, message: AppConfig.commitMessage("clock out \(record.clockOut ?? "") duration \(record.duration ?? "")"))
+                let outResult = try TodoRules.clockOut(today: date, store: store, week: &week)
+                var weeks = [week]
+                if let next = outResult.nextWeekToSave { weeks.append(next) }
+                try store.save(weeks, message: AppConfig.commitMessage("clock out \(outResult.record.clockOut ?? "") duration \(outResult.record.duration ?? "")"))
                 _ = try? WeeklySummary.ensure(forToday: date, store: store)
                 // Clock-out must push immediately so the follow-up transfer, weekly summary, etc. are all synced.
                 try store.flushPush()
                 self?.finishSync(
                     store: store,
                     date: date,
-                    notice: I18n.t("已下班 \(record.clockOut ?? "")，时长 \(record.duration ?? "")，已同步到远端",
-                                    "Clocked out \(record.clockOut ?? ""), duration \(record.duration ?? ""), synced")
+                    notice: I18n.t("已下班 \(outResult.record.clockOut ?? "")，时长 \(outResult.record.duration ?? "")，已同步到远端",
+                                    "Clocked out \(outResult.record.clockOut ?? ""), duration \(outResult.record.duration ?? ""), synced")
                 )
             } catch {
                 Logger.log("clockOut error: \(error.localizedDescription)")
@@ -503,6 +525,7 @@ final class TodoService: ObservableObject {
                 self.lastNotice = notice
                 self.lastError = error?.localizedDescription
                 self.isSyncing = false
+                if self.weekMode { self.refreshWeek() }
             }
         } catch {
             DispatchQueue.main.async { [weak self] in
