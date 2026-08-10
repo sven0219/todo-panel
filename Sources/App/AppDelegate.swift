@@ -17,6 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private var statusIcon: NSImage?
     private let panelSize = NSSize(width: 360, height: 540)
+    private var savedExpandedFrame: NSRect?
+    /// Mini pill origin relative to expanded panel (preserved when user drags the expanded window).
+    private var savedMiniOffsetInExpanded: NSPoint?
+    private var isMiniCollapsed = false
+    private var miniFloatTimer: Timer?
+    private var miniFloatSuppressUntil: Date?
+    private var miniFloatMouseMonitor: Any?
+    private var miniFloatMouseDownLocation: NSPoint?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -61,6 +69,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .dropFirst()
                 .sink { [weak self] _ in
                     self?.reloadServiceIfNeeded()
+                }
+                .store(in: &self.cancellables)
+            service.$miniFloatEnabled
+                .sink { [weak self] enabled in
+                    self?.updateMiniFloatTimer(enabled: enabled)
+                    if enabled, self?.panel.isVisible == true {
+                        self?.service.setPanelExpanded(false)
+                        self?.collapseToMini()
+                    } else if !enabled, self?.isMiniCollapsed == true {
+                        self?.expandFromMini()
+                        self?.service.setPanelExpanded(true)
+                    }
                 }
                 .store(in: &self.cancellables)
             service.objectWillChange
@@ -141,13 +161,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] note in
             guard let height = note.userInfo?["height"] as? CGFloat else { return }
-            self?.resizePanelToFit(contentHeight: height)
+            Task { @MainActor [weak self] in
+                self?.resizePanelToFit(contentHeight: height)
+            }
         }
     }
 
     /// Resize the window to fit content on collapse/expand, keeping the top edge fixed.
+    @MainActor
     private func resizePanelToFit(contentHeight: CGFloat) {
-        guard let panel, panel.isVisible else { return }
+        guard let panel, panel.isVisible, !isMiniCollapsed else { return }
+        guard service?.miniFloatEnabled != true else { return }
         let chrome: CGFloat = 150
         let minH: CGFloat = 360
         let maxH = min(NSScreen.main?.visibleFrame.height ?? 800, 760)
@@ -159,6 +183,153 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         newFrame.size.height = target
         newFrame.origin.y = oldFrame.maxY - target
         panel.setFrame(newFrame, display: true, animate: false)
+        if !isMiniCollapsed {
+            savedExpandedFrame = panel.frame
+        }
+    }
+
+    private func updateMiniFloatTimer(enabled: Bool) {
+        miniFloatTimer?.invalidate()
+        miniFloatTimer = nil
+        if let monitor = miniFloatMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            miniFloatMouseMonitor = nil
+        }
+        miniFloatMouseDownLocation = nil
+        guard enabled else { return }
+        miniFloatTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tickMiniFloatLeave()
+            }
+        }
+        RunLoop.main.add(miniFloatTimer!, forMode: .common)
+        miniFloatMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleMiniFloatClick(event)
+            }
+            return event
+        }
+    }
+
+    @MainActor
+    private func handleMiniFloatClick(_ event: NSEvent) {
+        guard let panel, let service, service.miniFloatEnabled, panel.isVisible, isMiniCollapsed else { return }
+        let loc = NSEvent.mouseLocation
+        switch event.type {
+        case .leftMouseDown:
+            if panel.frame.contains(loc) {
+                miniFloatMouseDownLocation = loc
+            }
+        case .leftMouseUp:
+            guard let down = miniFloatMouseDownLocation else { return }
+            miniFloatMouseDownLocation = nil
+            let dx = loc.x - down.x
+            let dy = loc.y - down.y
+            if dx * dx + dy * dy < 25, panel.frame.contains(loc) {
+                expandFromMini()
+                service.setPanelExpanded(true)
+            }
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func tickMiniFloatLeave() {
+        guard let panel, let service, service.miniFloatEnabled, panel.isVisible else { return }
+        let inside = panel.frame.contains(NSEvent.mouseLocation)
+        guard !inside, !isMiniCollapsed else { return }
+        if let until = miniFloatSuppressUntil, Date() < until { return }
+        service.setPanelExpanded(false)
+        collapseToMini()
+    }
+
+    private func updatePanelMinSize(mini: Bool, expanded: Bool) {
+        guard let panel else { return }
+        if mini && !expanded {
+            panel.minSize = MiniFloatLayout.size
+        } else {
+            panel.minSize = NSSize(width: 320, height: 360)
+        }
+    }
+
+    @MainActor
+    private func collapseToMini() {
+        guard let panel, !isMiniCollapsed else { return }
+        savedExpandedFrame = panel.frame
+        var frame = miniFrameFromExpanded(panel.frame)
+        clampFrameToVisibleScreen(&frame)
+        panel.setFrame(frame, display: true, animate: false)
+        isMiniCollapsed = true
+        updatePanelMinSize(mini: service?.miniFloatEnabled == true, expanded: false)
+    }
+
+    private func miniFrameFromExpanded(_ expanded: NSRect) -> NSRect {
+        let mini = MiniFloatLayout.size
+        var frame = NSRect(origin: .zero, size: mini)
+        if let offset = savedMiniOffsetInExpanded {
+            frame.origin.x = expanded.origin.x + offset.x
+            frame.origin.y = expanded.origin.y + offset.y
+        } else {
+            frame.origin.x = expanded.midX - mini.width / 2
+            frame.origin.y = expanded.minY
+        }
+        return frame
+    }
+
+    @MainActor
+    private func expandFromMini() {
+        guard let panel, isMiniCollapsed else { return }
+        let miniFrame = panel.frame
+        let size = savedExpandedFrame?.size ?? panelSize
+        let frame = expandedFrame(containing: miniFrame, size: size)
+        savedMiniOffsetInExpanded = NSPoint(
+            x: miniFrame.origin.x - frame.origin.x,
+            y: miniFrame.origin.y - frame.origin.y
+        )
+        panel.setFrame(frame, display: true, animate: false)
+        isMiniCollapsed = false
+        savedExpandedFrame = panel.frame
+        miniFloatSuppressUntil = Date().addingTimeInterval(0.25)
+        updatePanelMinSize(mini: service?.miniFloatEnabled == true, expanded: true)
+    }
+
+    /// Place the expanded panel so it stays on screen and still covers the mini pill (mouse stays inside).
+    private func expandedFrame(containing miniFrame: NSRect, size: NSSize) -> NSRect {
+        var frame = NSRect(
+            x: miniFrame.midX - size.width / 2,
+            y: miniFrame.minY,
+            width: size.width,
+            height: size.height
+        )
+        clampFrameToVisibleScreen(&frame)
+        nudgeFrameToContain(&frame, miniFrame)
+        clampFrameToVisibleScreen(&frame)
+        return frame
+    }
+
+    private func nudgeFrameToContain(_ frame: inout NSRect, _ inner: NSRect) {
+        if inner.maxX > frame.maxX {
+            frame.origin.x = inner.maxX - frame.width
+        }
+        if inner.minX < frame.minX {
+            frame.origin.x = inner.minX
+        }
+        if inner.minY < frame.minY {
+            frame.origin.y = inner.minY
+        }
+        if inner.maxY > frame.maxY {
+            frame.origin.y = inner.maxY - frame.height
+        }
+    }
+
+    private func clampFrameToVisibleScreen(_ frame: inout NSRect) {
+        guard let screen = NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width - 8 }
+        if frame.minX < visible.minX { frame.origin.x = visible.minX + 8 }
+        if frame.minY < visible.minY { frame.origin.y = visible.minY + 8 }
+        if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - frame.height - 8 }
     }
 
     private func startFlushTimer() {
@@ -179,6 +350,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         flushTimer?.invalidate()
+        miniFloatTimer?.invalidate()
+        if let monitor = miniFloatMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
         service?.shutdown()
     }
 
@@ -223,24 +398,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func togglePanel() {
-        if panel.isVisible {
-            panel.orderOut(nil)
-        } else {
-            positionPanel()
-            panel.makeKeyAndOrderFront(nil)
-            panel.makeFirstResponder(nil)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if self.panel.isVisible {
+                self.panel.orderOut(nil)
+                self.isMiniCollapsed = false
+            } else {
+                if self.service.miniFloatEnabled {
+                    self.service.setPanelExpanded(false)
+                }
+                self.positionPanel()
+                self.panel.makeKeyAndOrderFront(nil)
+                self.panel.makeFirstResponder(nil)
+                self.updatePanelMinSize(mini: self.service.miniFloatEnabled, expanded: !self.isMiniCollapsed)
+            }
         }
     }
 
+    @MainActor
     private func positionPanel() {
         guard let button = statusItem.button, let screen = NSScreen.main else {
             panel.center()
             return
         }
         let btnFrame = button.window?.frame ?? NSRect(x: screen.visibleFrame.maxX, y: screen.visibleFrame.maxY, width: 0, height: 0)
-        var origin = NSPoint(x: btnFrame.midX - panelSize.width / 2, y: btnFrame.minY - panelSize.height - 6)
-        if origin.x + panelSize.width > screen.visibleFrame.maxX {
-            origin.x = screen.visibleFrame.maxX - panelSize.width - 8
+        let size = (service?.miniFloatEnabled == true) ? MiniFloatLayout.size : panelSize
+        var origin = NSPoint(x: btnFrame.midX - size.width / 2, y: btnFrame.minY - size.height - 6)
+        if origin.x + size.width > screen.visibleFrame.maxX {
+            origin.x = screen.visibleFrame.maxX - size.width - 8
         }
         if origin.x < screen.visibleFrame.minX {
             origin.x = screen.visibleFrame.minX + 8
@@ -248,7 +433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if origin.y < screen.visibleFrame.minY {
             origin.y = screen.visibleFrame.minY + 8
         }
-        panel.setFrameOrigin(origin)
+        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+        isMiniCollapsed = service?.miniFloatEnabled == true && service?.panelExpanded == false
     }
 
     @objc func quit() {

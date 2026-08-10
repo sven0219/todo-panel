@@ -19,6 +19,10 @@ final class TodoService: ObservableObject {
     @Published private(set) var pendingPushCount = 0
     @Published private(set) var knownProjects: [String] = []
     @Published var alwaysOnTop = true
+    /// Mini float: collapsed pill on screen; click to expand.
+    @Published private(set) var miniFloatEnabled = false
+    /// Runtime expanded state when mini float is on (not persisted).
+    @Published private(set) var panelExpanded = true
     @Published private(set) var launchAtLogin = false
     /// UI language: system / zh / en.
     @Published private(set) var languageMode: I18n.Language = .system
@@ -53,6 +57,7 @@ final class TodoService: ObservableObject {
         self.alwaysOnTop = UserDefaults.standard.object(forKey: "alwaysOnTop") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "alwaysOnTop")
+        self.miniFloatEnabled = UserDefaults.standard.bool(forKey: "miniFloatEnabled")
         self.repoPathOverride = UserDefaults.standard.string(forKey: "repoPathOverride") ?? ""
         self.launchAtLogin = LoginItem.isEnabled
         let savedLang = UserDefaults.standard.string(forKey: "languageMode")
@@ -126,6 +131,20 @@ final class TodoService: ObservableObject {
     func setAlwaysOnTop(_ value: Bool) {
         alwaysOnTop = value
         UserDefaults.standard.set(value, forKey: "alwaysOnTop")
+    }
+
+    func setMiniFloatEnabled(_ value: Bool) {
+        miniFloatEnabled = value
+        UserDefaults.standard.set(value, forKey: "miniFloatEnabled")
+        panelExpanded = !value
+    }
+
+    func setPanelExpanded(_ value: Bool) {
+        guard miniFloatEnabled else {
+            panelExpanded = true
+            return
+        }
+        panelExpanded = value
     }
 
     func setRepoPathOverride(_ value: String) -> Bool {

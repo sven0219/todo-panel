@@ -4,6 +4,17 @@ struct ContentView: View {
     @ObservedObject var service: TodoService
 
     var body: some View {
+        Group {
+            if service.miniFloatEnabled && !service.panelExpanded {
+                MiniFloatView(service: service)
+            } else {
+                fullPanel
+            }
+        }
+        .onAppear { service.lastError = nil }
+    }
+
+    private var fullPanel: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.regularMaterial)
@@ -105,7 +116,39 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 320, minHeight: 360)
-        .onAppear { service.lastError = nil }
+    }
+}
+
+struct MiniFloatView: View {
+    @ObservedObject var service: TodoService
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.body)
+                .foregroundStyle(statusColor)
+            if service.isWorking || service.clockOutTime != nil {
+                Text(service.workedHoursText)
+                    .font(.caption.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(.regularMaterial)
+                .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+        )
+        .frame(width: MiniFloatLayout.size.width, height: MiniFloatLayout.size.height)
+        .help(I18n.t("点击展开面板", "Click to expand panel"))
+    }
+
+    private var statusColor: Color {
+        if service.isWorking { return .green }
+        if service.clockOutTime != nil { return .orange }
+        return .secondary
     }
 }
 
@@ -270,6 +313,15 @@ struct SettingsPopover: View {
             Text(I18n.t("关闭后窗口可以被其他应用遮挡。", "The panel can be covered by other apps when off."))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            Toggle(I18n.t("迷你悬浮", "Mini float"), isOn: Binding(
+                get: { service.miniFloatEnabled },
+                set: { service.setMiniFloatEnabled($0) }
+            ))
+            Text(I18n.t("收起为小胶囊悬浮在屏幕上，点击展开，移开自动收起。",
+                        "Collapse to a small pill on screen; click to expand, move away to collapse."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Divider()
             Toggle(I18n.t("开机自启", "Launch at login"), isOn: Binding(
                 get: { service.launchAtLogin },
