@@ -186,10 +186,11 @@ enum SelfTest {
             let fridayAfter5 = try store5.loadWeek(containing: friday)
             check(fridayAfter5.days.first(where: { $0.date == friday })?.followup.isEmpty == true, "clock-out: today 待跟进 cleared")
 
-            // Group 5b: day lookups with non-midnight dates (Date()) must reuse the same day
+            // Group 5b: day lookups with non-midnight dates must reuse the same day
             let store6 = try makeRepo()
             store6.pushEnabled = false
-            let now = Date()
+            // Friday afternoon — next workday is Monday (different week file).
+            let now = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 7, hour: 15, minute: 30))!
             var w6a = try store6.loadWeek(containing: now)
             _ = try TodoRules.clockIn(today: now, location: "Remote", store: store6, week: &w6a)
             try store6.save(w6a, message: "t")
