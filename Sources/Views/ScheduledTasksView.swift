@@ -8,81 +8,76 @@ struct ScheduledTasksSection: View {
     @State private var taskToDelete: ScheduledTaskConfig?
 
     var body: some View {
-        HStack {
-            Text(I18n.t("定时任务", "Scheduled tasks"))
-                .font(.caption.bold())
-            Spacer()
-            Button {
-                editingTask = nil
-                editingOriginalId = nil
-                showingAdd = true
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(Palette.followup)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(I18n.t("定时任务", "Scheduled tasks"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    editingTask = nil
+                    editingOriginalId = nil
+                    showingAdd = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .disabled(service.isSyncing)
             }
-            .buttonStyle(.plain)
-            .disabled(service.isSyncing)
-            .help(I18n.t("添加定时任务", "Add scheduled task"))
-        }
-        Text(I18n.t("首次上班打卡时自动加入「待跟进」",
-                    "Added to Follow-up on the first clock-in of the day"))
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
 
-        if service.scheduledTasks.isEmpty {
-            Text(I18n.t("暂无", "None"))
+            Text(I18n.t("首次上班打卡时自动加入「待跟进」",
+                        "Added to Follow-up on the first clock-in of the day"))
                 .font(.caption)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 4)
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(service.scheduledTasks) { task in
-                    HStack(alignment: .center, spacing: 6) {
-                        Text(task.scheduleLabel)
-                            .font(.caption2.bold())
-                            .foregroundStyle(Palette.followup)
-                            .frame(width: 52, alignment: .leading)
-                        Text(task.displayTitle)
-                            .font(.caption)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button {
-                            editingTask = task
-                            editingOriginalId = task.id
-                            showingAdd = true
-                        } label: {
-                            Image(systemName: "pencil")
-                                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            if service.scheduledTasks.isEmpty {
+                Text(I18n.t("暂无", "None"))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(service.scheduledTasks.enumerated()), id: \.element.id) { index, task in
+                        HStack(alignment: .center, spacing: 8) {
+                            Text(task.scheduleLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Palette.followup)
+                                .frame(width: 56, alignment: .leading)
+                            Text(task.displayTitle)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Button {
+                                editingTask = task
+                                editingOriginalId = task.id
+                                showingAdd = true
+                            } label: {
+                                Image(systemName: "square.and.pencil")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(service.isSyncing)
+                            Button {
+                                taskToDelete = task
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                            .disabled(service.isSyncing)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .disabled(service.isSyncing)
-                        Button {
-                            taskToDelete = task
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.caption2)
+                        .padding(.vertical, 6)
+                        if index < service.scheduledTasks.count - 1 {
+                            Divider()
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.red.opacity(0.85))
-                        .disabled(service.isSyncing)
                     }
                 }
             }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.followup.opacity(0.08))
-            )
-        }
 
-        Text(I18n.t("保存至 todo.config.json；月内固定日遇周末顺延至下一工作日。",
-                    "Saved to todo.config.json; fixed month days on weekends move to the next workday."))
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
+            Text(I18n.t("保存至 todo.config.json；月内固定日遇周末顺延至下一工作日。",
+                        "Saved to todo.config.json; fixed month days on weekends move to the next workday."))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
         .sheet(isPresented: $showingAdd) {
             ScheduledTaskEditorSheet(
                 service: service,
@@ -141,65 +136,56 @@ struct ScheduledTaskEditorSheet: View {
     private var isEditing: Bool { task != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(isEditing
-                 ? I18n.t("编辑定时任务", "Edit scheduled task")
-                 : I18n.t("添加定时任务", "Add scheduled task"))
-                .font(.headline)
-                .fontDesign(.rounded)
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    TextField(I18n.t("项目", "Project"), text: $project)
+                    TextField(I18n.t("事项", "Task"), text: $text)
 
-            TextField(I18n.t("项目", "Project"), text: $project)
-                .textFieldStyle(.roundedBorder)
-            TextField(I18n.t("事项", "Task"), text: $text)
-                .textFieldStyle(.roundedBorder)
+                    let matches = projectMatches
+                    if !matches.isEmpty {
+                        ForEach(matches, id: \.self) { name in
+                            Button(name) { project = name }
+                                .buttonStyle(.plain)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
 
-            let matches = projectMatches
-            if !matches.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(matches, id: \.self) { name in
-                        Button { project = name } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.uturn.left")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.tertiary)
-                                Text(name)
-                                    .font(.caption)
-                                    .foregroundStyle(Palette.primary)
+                Section(I18n.t("周期", "Schedule")) {
+                    Picker(I18n.t("周期", "Schedule"), selection: $kind) {
+                        Text(I18n.t("每周", "Weekly")).tag(ScheduleKind.weekday)
+                        Text(I18n.t("每月", "Monthly")).tag(ScheduleKind.monthDay)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    if kind == .weekday {
+                        Picker(I18n.t("星期", "Weekday"), selection: $weekday) {
+                            ForEach(ScheduledTaskConfig.weekdayOptions, id: \.value) { opt in
+                                Text(opt.label).tag(opt.value)
                             }
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        Stepper(I18n.t("每月 \(monthDay) 日", "Day \(monthDay) of month"), value: $monthDay, in: 1...31)
                     }
                 }
             }
-
-            Picker(I18n.t("周期", "Schedule"), selection: $kind) {
-                Text(I18n.t("每周", "Weekly")).tag(ScheduleKind.weekday)
-                Text(I18n.t("每月", "Monthly")).tag(ScheduleKind.monthDay)
-            }
-            .pickerStyle(.segmented)
-
-            if kind == .weekday {
-                Picker(I18n.t("星期", "Weekday"), selection: $weekday) {
-                    ForEach(ScheduledTaskConfig.weekdayOptions, id: \.value) { opt in
-                        Text(opt.label).tag(opt.value)
-                    }
-                }
-            } else {
-                Stepper(I18n.t("每月 \(monthDay) 日", "Day \(monthDay) of month"), value: $monthDay, in: 1...31)
-            }
+            .formStyle(.grouped)
 
             HStack {
                 Spacer()
                 Button(I18n.t("取消", "Cancel")) { close() }
+                    .keyboardShortcut(.cancelAction)
                 Button(I18n.t("保存", "Save")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .tint(Palette.primary)
                     .disabled(service.isSyncing)
             }
+            .padding(12)
         }
-        .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
         .onAppear { loadFields() }
     }
 

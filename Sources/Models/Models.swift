@@ -66,6 +66,11 @@ struct TodoItem: Identifiable, Hashable, Codable {
         if isSubDone(sub) { return subDisplay(sub) }
         return "~~\(sub)~~"
     }
+
+    /// True when the item has no subtasks, or every subtask is marked done.
+    var isFullyComplete: Bool {
+        subItems.isEmpty || subItems.allSatisfy { isSubDone($0) }
+    }
 }
 
 enum DaySection {

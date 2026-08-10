@@ -33,35 +33,31 @@ struct SetupView: View {
     let onComplete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "folder.badge.questionmark")
-                    .foregroundStyle(Palette.primary)
-                Text(I18n.t("todo 仓库未找到", "todo repo not found"))
-                    .font(.headline)
-                    .fontDesign(.rounded)
-            }
-            Text(I18n.t("请输入 todo 仓库所在路径（包含 AGENTS.md 或 .git 的目录）：",
-                        "Enter the todo repo path (the directory containing AGENTS.md or .git):"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField(I18n.t("例如 /Users/you/work/todo", "e.g. /Users/you/work/todo"), text: $path)
-                .textFieldStyle(.roundedBorder)
-            if let error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-            HStack(spacing: 6) {
-                Button {
-                    if let p = PathPicker.chooseDirectory() {
-                        path = p
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Label(I18n.t("todo 仓库未找到", "todo repo not found"), systemImage: "folder.badge.questionmark")
+                        .font(.headline)
+                    Text(I18n.t("请输入 todo 仓库所在路径（包含 AGENTS.md 或 .git 的目录）：",
+                                "Enter the todo repo path (the directory containing AGENTS.md or .git):"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(I18n.t("例如 /Users/you/work/todo", "e.g. /Users/you/work/todo"), text: $path)
+                    if let error {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
                     }
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button {
+                    if let p = PathPicker.chooseDirectory() { path = p }
                 } label: {
                     Label(I18n.t("选择…", "Choose…"), systemImage: "folder")
                 }
-                .buttonStyle(.bordered)
                 Spacer()
                 Button(I18n.t("退出", "Quit")) {
                     NSApp.terminate(nil)
@@ -77,14 +73,10 @@ struct SetupView: View {
                     onComplete()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Palette.primary)
                 .disabled(path.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text(I18n.t("可直接粘贴路径（⌘V）", "You can paste the path (⌘V)"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            .padding(16)
         }
-        .padding(20)
-        .frame(width: 360)
+        .frame(width: 380)
     }
 }

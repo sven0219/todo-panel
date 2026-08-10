@@ -13,12 +13,16 @@ enum SelfTest {
             print("screenshot: bad repo \(repo)")
             exit(1)
         }
-        let demoDay = DateComponents(calendar: .current, year: 2026, month: 6, day: 12).date!
+        let demoDay = DateComponents(calendar: .current, year: 2026, month: 6, day: 10).date!
         svc.goToDay(demoDay)
-        render(ContentView(service: svc), size: CGSize(width: 380, height: 660), to: "\(outDir)/todo-day.png")
+        render(ContentView(service: svc), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-day.png")
         svc.setWeekMode(true)
-        render(ContentView(service: svc), size: CGSize(width: 380, height: 660), to: "\(outDir)/todo-week.png")
-        render(SettingsPopover(service: svc), size: CGSize(width: 360, height: 560), to: "\(outDir)/todo-settings.png")
+        render(ContentView(service: svc), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-week.png")
+        render(SettingsPopover(service: svc), size: CGSize(width: 340, height: 520), to: "\(outDir)/todo-settings.png")
+        svc.setWeekMode(false)
+        svc.setMiniFloatEnabled(true)
+        svc.setPanelExpanded(false)
+        render(ContentView(service: svc), size: CGSize(width: 96, height: 48), to: "\(outDir)/todo-mini.png")
     }
 
     @MainActor
@@ -165,6 +169,28 @@ enum SelfTest {
             let fridayAfter4 = try store4.loadWeek(containing: friday)
             check(fridayAfter4.days.first(where: { $0.date == friday })!.followup.isEmpty, "clock-in: removed from Friday")
 
+            // Group 4b: clock-out on Monday moves follow-ups to Tuesday within the same week file
+            let store4b = try makeRepo()
+            store4b.pushEnabled = false
+            let monday4b = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
+            let tuesday4b = DateComponents(calendar: .current, year: 2026, month: 8, day: 11).date!
+            var w4b = try store4b.loadWeek(containing: monday4b)
+            var d4b = store4b.day(in: &w4b, for: monday4b)
+            d4b.followup.append(TodoItem(project: "Marriott", text: "同周待办"))
+            d4b.time.clockIn = "09:00"
+            store4b.replace(d4b, in: &w4b)
+            try store4b.save(w4b, message: "t")
+            var w4b2 = try store4b.loadWeek(containing: monday4b)
+            let out4b = try TodoRules.clockOut(today: monday4b, store: store4b, week: &w4b2)
+            check(out4b.nextWeekToSave == nil, "clock-out same week: no extra week file")
+            var weeks4b = [w4b2]
+            if let next = out4b.nextWeekToSave { weeks4b.append(next) }
+            try store4b.save(weeks4b, message: "t")
+            let after4b = try store4b.loadWeek(containing: monday4b)
+            check(after4b.days.first(where: { $0.date == monday4b })?.followup.isEmpty == true, "clock-out same week: Monday cleared")
+            check(after4b.days.first(where: { $0.date == tuesday4b })?.followup.contains { $0.text == "同周待办" } == true, "clock-out same week: Tuesday has item")
+            check(after4b.days.first(where: { $0.date == monday4b })?.time.clockOut != nil, "clock-out same week: Monday clock-out saved")
+
             // Group 5: clock-out on Friday moves follow-ups to next Monday (new week auto-created)
             let store5 = try makeRepo()
             store5.pushEnabled = false
@@ -185,6 +211,28 @@ enum SelfTest {
             check(nextWeek.days.first(where: { $0.date == mondayNext })?.followup.contains { $0.text == "待办A" } == true, "clock-out: 待跟进 moved to next Monday")
             let fridayAfter5 = try store5.loadWeek(containing: friday)
             check(fridayAfter5.days.first(where: { $0.date == friday })?.followup.isEmpty == true, "clock-out: today 待跟进 cleared")
+
+            // Group 5c: partial subtask completion stays open and moves on clock-out
+            let store5c = try makeRepo()
+            store5c.pushEnabled = false
+            let mon5c = DateComponents(calendar: .current, year: 2026, month: 8, day: 10).date!
+            let tue5c = DateComponents(calendar: .current, year: 2026, month: 8, day: 11).date!
+            var w5c = try store5c.loadWeek(containing: mon5c)
+            var d5c = store5c.day(in: &w5c, for: mon5c)
+            let partial = TodoItem(project: "Marriott", text: "pipeline", subItems: ["~~A~~", "B"])
+            check(!partial.isFullyComplete, "subtask: partial item not fully complete")
+            d5c.completed.append(partial)
+            d5c.time.clockIn = "09:00"
+            store5c.replace(d5c, in: &w5c)
+            try store5c.save(w5c, message: "t")
+            var w5c2 = try store5c.loadWeek(containing: mon5c)
+            _ = try TodoRules.clockOut(today: mon5c, store: store5c, week: &w5c2)
+            try store5c.save(w5c2, message: "t")
+            let after5c = try store5c.loadWeek(containing: mon5c)
+            check(after5c.days.first(where: { $0.date == mon5c })?.completed.isEmpty == true, "clock-out partial: Monday completed cleared")
+            let tueDay5c = after5c.days.first(where: { $0.date == tue5c })
+            check(tueDay5c?.followup.contains { $0.text == "pipeline" } == true, "clock-out partial: moved to Tuesday")
+            check(tueDay5c?.followup.first(where: { $0.text == "pipeline" })?.subItems == ["~~A~~", "B"], "clock-out partial: subtasks preserved")
 
             // Group 5b: day lookups with non-midnight dates must reuse the same day
             let store6 = try makeRepo()

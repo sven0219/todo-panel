@@ -51,11 +51,17 @@ struct TodoRules {
         var moved: [TodoItem] = []
         var prevWeekToSave: WeekFile?
         if let prev = try previousWorkdayFollowup(before: today, store: store), !prev.items.isEmpty, !dayHadFollowup {
-            var prevWeek = prev.week
-            var prevDay = prev.day
-            prevDay.followup.removeAll { item in prev.items.contains { $0.id == item.id } }
-            prevWeek.days = prevWeek.days.map { DateMath.isSameDay($0.date, prevDay.date) ? prevDay : $0 }
-            prevWeekToSave = prevWeek
+            if ISOWeek.isInSameWeek(today, prev.date) {
+                var prevDay = store.day(in: &week, for: prev.date)
+                prevDay.followup.removeAll { item in prev.items.contains { $0.id == item.id } }
+                store.replace(prevDay, in: &week)
+            } else {
+                var prevWeek = prev.week
+                var prevDay = prev.day
+                prevDay.followup.removeAll { item in prev.items.contains { $0.id == item.id } }
+                prevWeek.days = prevWeek.days.map { DateMath.isSameDay($0.date, prevDay.date) ? prevDay : $0 }
+                prevWeekToSave = prevWeek
+            }
 
             day.followup.append(contentsOf: prev.items)
             moved = prev.items
@@ -75,17 +81,33 @@ struct TodoRules {
         }
         store.replace(day, in: &week)
 
-        // Move today's follow-ups to the next workday.
+        // Move today's open todos to the next workday: follow-ups plus any
+        // completed/uncompleted items that still have unfinished subtasks.
+        let carryOver = day.followup
+            + day.completed.filter { !$0.isFullyComplete }
+            + day.uncompleted
         var nextWeekToSave: WeekFile?
-        if !day.followup.isEmpty {
+        if !carryOver.isEmpty {
             let next = DateMath.nextWorkday(after: today)
-            var nextWeek = try store.loadWeek(containing: next)
-            var nextDay = store.day(in: &nextWeek, for: next)
-            nextDay.followup.append(contentsOf: day.followup)
-            store.replace(nextDay, in: &nextWeek)
-            day.followup.removeAll()
-            store.replace(day, in: &week)
-            nextWeekToSave = nextWeek
+            if ISOWeek.isInSameWeek(today, next) {
+                var nextDay = store.day(in: &week, for: next)
+                nextDay.followup.append(contentsOf: carryOver)
+                store.replace(nextDay, in: &week)
+                day.followup.removeAll()
+                day.completed.removeAll { !$0.isFullyComplete }
+                day.uncompleted.removeAll()
+                store.replace(day, in: &week)
+            } else {
+                var nextWeek = try store.loadWeek(containing: next)
+                var nextDay = store.day(in: &nextWeek, for: next)
+                nextDay.followup.append(contentsOf: carryOver)
+                store.replace(nextDay, in: &nextWeek)
+                day.followup.removeAll()
+                day.completed.removeAll { !$0.isFullyComplete }
+                day.uncompleted.removeAll()
+                store.replace(day, in: &week)
+                nextWeekToSave = nextWeek
+            }
         }
         return ClockOutResult(record: day.time, nextWeekToSave: nextWeekToSave)
     }

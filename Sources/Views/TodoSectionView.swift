@@ -16,6 +16,7 @@ struct TodoSection: View {
     @State private var project = ""
     @State private var text = ""
     @State private var editingItem: TodoItem?
+
     init(title: String, icon: String, color: Color, items: [TodoItem],
          addPlaceholderProject: String, addPlaceholderText: String,
          service: TodoService, toCompleted: Bool, showAdd: Bool = true,
@@ -32,7 +33,6 @@ struct TodoSection: View {
         _isCollapsed = State(initialValue: initiallyCollapsed)
     }
 
-    /// Historical projects matching the current input (up to 5).
     private var projectMatches: [String] {
         let input = project.trimmingCharacters(in: .whitespaces)
         guard !input.isEmpty else { return [] }
@@ -43,107 +43,102 @@ struct TodoSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isCollapsed.toggle()
+        GroupBox {
+            VStack(alignment: .leading, spacing: 0) {
+                if !isCollapsed {
+                    if showInput {
+                        AddTodoRow(project: $project, text: $text,
+                                   placeholderProject: addPlaceholderProject,
+                                   placeholderText: addPlaceholderText) {
+                            service.addTodo(project: project, text: text, toCompleted: !toCompleted)
+                            project = ""
+                            text = ""
+                            showInput = false
+                        }
+                        .disabled(service.isSyncing)
+                        .padding(.bottom, 8)
+
+                        let matches = projectMatches
+                        if !matches.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(matches, id: \.self) { name in
+                                    Button(name) { project = name }
+                                        .buttonStyle(.plain)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.bottom, 8)
+                        }
                     }
+
+                    if items.isEmpty {
+                        Text(I18n.t("暂无内容", "Nothing here"))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 12)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                TodoRow(
+                                    item: item,
+                                    toCompleted: toCompleted,
+                                    moveDown: { service.move(item, offset: 1) },
+                                    moveUp: { service.move(item, offset: -1) },
+                                    onToggle: { service.moveTodo(item, toCompleted: toCompleted) },
+                                    onSubToggle: { sub in service.toggleSubItem(item, sub: sub) },
+                                    onEdit: { editingItem = item },
+                                    onDelete: { service.deleteTodo(item, fromCompleted: !toCompleted) }
+                                )
+                                .disabled(service.isSyncing)
+                                if index < items.count - 1 {
+                                    Divider()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { isCollapsed.toggle() }
                 } label: {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2.bold())
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .help(isCollapsed ? I18n.t("展开", "Expand") : I18n.t("收起", "Collapse"))
-                Image(systemName: icon)
-                    .foregroundStyle(color)
-                Text(title)
-                    .font(.subheadline.bold())
-                    .fontDesign(.rounded)
-                Text("\(items.count)")
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(color.opacity(0.18)))
+
+                Label {
+                    HStack(spacing: 6) {
+                        Text(title)
+                        Text("\(items.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                } icon: {
+                    Image(systemName: icon)
+                        .foregroundStyle(color)
+                }
+                .font(.subheadline.weight(.semibold))
+
                 Spacer()
+
                 if showAdd {
                     Button {
                         showInput.toggle()
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.body)
-                            .foregroundStyle(color)
+                        Image(systemName: "plus")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .disabled(service.isSyncing)
-                }
-            }
-
-            if !isCollapsed {
-                if showInput {
-                    AddTodoRow(project: $project, text: $text, placeholderProject: addPlaceholderProject, placeholderText: addPlaceholderText) {
-                        service.addTodo(project: project, text: text, toCompleted: !toCompleted)
-                        project = ""
-                        text = ""
-                        showInput = false
-                    }
-                    .disabled(service.isSyncing)
-
-                    let matches = projectMatches
-                    if !matches.isEmpty {
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(matches, id: \.self) { name in
-                                Button {
-                                    project = name
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "arrow.uturn.left")
-                                            .font(.system(size: 8))
-                                            .foregroundStyle(.tertiary)
-                                        Text(name)
-                                            .font(.caption)
-                                            .foregroundStyle(Palette.primary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .help(I18n.t("使用项目「\(name)」", "Use project \"\(name)\""))
-                            }
-                        }
-                        .padding(.leading, 6)
-                    }
-                }
-
-                if items.isEmpty {
-                    Text(I18n.t("暂无内容", "Nothing here"))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 10)
-                } else {
-                    VStack(spacing: 6) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            TodoRow(
-                                item: item,
-                                toCompleted: toCompleted,
-                                moveDown: { service.move(item, offset: 1) },
-                                moveUp: { service.move(item, offset: -1) },
-                                onToggle: { service.moveTodo(item, toCompleted: toCompleted) },
-                                onSubToggle: { sub in service.toggleSubItem(item, sub: sub) },
-                                onEdit: { editingItem = item },
-                                onDelete: { service.deleteTodo(item, fromCompleted: !toCompleted) }
-                            )
-                            .disabled(service.isSyncing)
-                        }
-                    }
                 }
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(color.opacity(0.08))
-        )
         .sheet(item: $editingItem) { item in
             EditTodoSheet(service: service, item: item)
         }
@@ -158,31 +153,18 @@ struct AddTodoRow: View {
     let onAdd: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             TextField(placeholderProject, text: $project)
-                .textFieldStyle(.plain)
+                .textFieldStyle(.roundedBorder)
                 .font(.caption)
-                .frame(width: 88)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.6)))
+                .frame(width: 96)
             TextField(placeholderText, text: $text)
-                .textFieldStyle(.plain)
+                .textFieldStyle(.roundedBorder)
                 .font(.caption)
                 .onSubmit(onAdd)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.6)))
-            Button {
-                onAdd()
-            } label: {
-                Image(systemName: "checkmark")
-                    .font(.caption.bold())
-                    .foregroundStyle(.white)
-                    .padding(4)
-                    .background(Circle().fill(Palette.primary))
-            }
-            .buttonStyle(.plain)
+            Button(I18n.t("添加", "Add"), action: onAdd)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
     }
 }
@@ -197,118 +179,92 @@ struct TodoRow: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
 
-    /// Bold project name + task text.
+    @State private var isHovering = false
+
     private var attributedParent: AttributedString {
         var result = AttributedString()
         if !item.project.isEmpty {
-            result.append(AttributedString(item.project, attributes: AttributeContainer([.font: Font.callout.bold()])))
+            result.append(AttributedString(item.project, attributes: AttributeContainer([.font: Font.body.weight(.semibold)])))
             if !item.text.isEmpty {
-                result.append(AttributedString(" - \(item.text)", attributes: AttributeContainer([.font: Font.callout])))
+                result.append(AttributedString(" — \(item.text)", attributes: AttributeContainer([.font: Font.body])))
             }
         } else {
-            result.append(AttributedString(item.text, attributes: AttributeContainer([.font: Font.callout])))
+            result.append(AttributedString(item.text, attributes: AttributeContainer([.font: Font.body])))
         }
         return result
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button {
-                onToggle()
-            } label: {
+        HStack(alignment: .top, spacing: 8) {
+            Button(action: onToggle) {
                 Image(systemName: toCompleted ? "circle" : "checkmark.circle.fill")
-                    .font(.body)
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(toCompleted ? Color.secondary : Palette.completed)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .help(toCompleted ? I18n.t("标记为完成", "Mark done") : I18n.t("恢复为待办", "Restore"))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(attributedParent)
                     .foregroundStyle(toCompleted ? .secondary : .primary)
-                    .lineLimit(2)
+                    .lineLimit(3)
+
                 if !item.subItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         ForEach(item.subItems, id: \.self) { sub in
-                            Button {
-                                onSubToggle(sub)
-                            } label: {
-                                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                    Image(systemName: item.isSubDone(sub) ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(item.isSubDone(sub) ? Palette.completed : Color.secondary)
+                            Button { onSubToggle(sub) } label: {
+                                Label {
                                     Text(item.subDisplay(sub))
                                         .font(.caption)
-                                        .foregroundStyle(item.isSubDone(sub) ? Color.secondary : Color.primary)
                                         .strikethrough(item.isSubDone(sub), color: .secondary)
-                                        .lineLimit(2)
+                                } icon: {
+                                    Image(systemName: item.isSubDone(sub) ? "checkmark.circle.fill" : "circle")
+                                        .font(.caption)
                                 }
+                                .foregroundStyle(item.isSubDone(sub) ? .secondary : .primary)
                             }
                             .buttonStyle(.plain)
-                            .help(I18n.t("点击切换子事项完成状态", "Click to toggle subtask"))
                         }
                     }
-                    .padding(.leading, 12)
-                    .padding(.top, 3)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(toCompleted ? .quaternary : .quinary)
-                            .frame(width: 2)
-                            .padding(.vertical, 1)
-                    }
+                    .padding(.leading, 4)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            Button {
-                onEdit()
-            } label: {
-                Image(systemName: "pencil")
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(I18n.t("编辑", "Edit"))
+            if isHovering {
+                HStack(spacing: 2) {
+                    Button(action: onEdit) {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(I18n.t("编辑", "Edit"))
 
-            Button {
-                moveUp()
-            } label: {
-                Image(systemName: "chevron.up")
-            }
-            .buttonStyle(.plain)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+                    Button(action: moveUp) {
+                        Image(systemName: "chevron.up")
+                    }
+                    .buttonStyle(.borderless)
 
-            Button {
-                moveDown()
-            } label: {
-                Image(systemName: "chevron.down")
-            }
-            .buttonStyle(.plain)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+                    Button(action: moveDown) {
+                        Image(systemName: "chevron.down")
+                    }
+                    .buttonStyle(.borderless)
 
-            Button {
-                onDelete()
-            } label: {
-                Image(systemName: "xmark")
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+                    .help(I18n.t("删除", "Delete"))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.red.opacity(0.9))
-            .help(I18n.t("删除", "Delete"))
         }
-        .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.background.opacity(0.9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(.primary.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .padding(.horizontal, 2)
+        .background(isHovering ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.12) : .clear)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -329,26 +285,24 @@ struct EditTodoSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(I18n.t("编辑待办", "Edit Todo"))
-                .font(.headline)
-                .fontDesign(.rounded)
-            TextField(I18n.t("项目", "Project"), text: $project)
-                .textFieldStyle(.roundedBorder)
-            TextField(I18n.t("事项", "Task"), text: $text)
-                .textFieldStyle(.roundedBorder)
-            Text(I18n.t("子事项（每行一个）", "Subtasks (one per line)"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextEditor(text: $subItems)
-                .font(.body)
-                .frame(height: 70)
-                .scrollContentBackground(.hidden)
-                .padding(4)
-                .background(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    TextField(I18n.t("项目", "Project"), text: $project)
+                    TextField(I18n.t("事项", "Task"), text: $text)
+                }
+                Section(I18n.t("子事项（每行一个）", "Subtasks (one per line)")) {
+                    TextEditor(text: $subItems)
+                        .font(.body)
+                        .frame(height: 80)
+                }
+            }
+            .formStyle(.grouped)
+
             HStack {
                 Spacer()
                 Button(I18n.t("取消", "Cancel")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button(I18n.t("保存", "Save")) {
                     service.updateTodo(item, project: project, text: text,
                                        subItems: subItems.components(separatedBy: "\n"))
@@ -356,10 +310,9 @@ struct EditTodoSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .tint(Palette.primary)
             }
+            .padding(12)
         }
-        .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
     }
 }

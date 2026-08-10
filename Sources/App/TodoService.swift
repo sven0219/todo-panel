@@ -57,7 +57,8 @@ final class TodoService: ObservableObject {
         self.alwaysOnTop = UserDefaults.standard.object(forKey: "alwaysOnTop") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "alwaysOnTop")
-        self.miniFloatEnabled = UserDefaults.standard.bool(forKey: "miniFloatEnabled")
+        // Mini float is session-only; always start expanded with the setting off.
+        self.miniFloatEnabled = false
         self.repoPathOverride = UserDefaults.standard.string(forKey: "repoPathOverride") ?? ""
         self.launchAtLogin = LoginItem.isEnabled
         let savedLang = UserDefaults.standard.string(forKey: "languageMode")
@@ -135,8 +136,9 @@ final class TodoService: ObservableObject {
 
     func setMiniFloatEnabled(_ value: Bool) {
         miniFloatEnabled = value
-        UserDefaults.standard.set(value, forKey: "miniFloatEnabled")
-        panelExpanded = !value
+        if !value {
+            panelExpanded = true
+        }
     }
 
     func setPanelExpanded(_ value: Bool) {
@@ -503,33 +505,31 @@ final class TodoService: ObservableObject {
         persist("\(action) \(item.display)")
     }
 
-    /// Toggle a subtask's done state: completing moves the whole item to Done;
-    /// cancelling in Done moves it back to Todo if no other subtask is done.
+    /// Toggle a subtask's done state. The parent moves to Done only when every subtask is done.
     func toggleSubItem(_ item: TodoItem, sub: String) {
         guard !isSyncing else { return }
         var updated = item
         let wasDone = item.isSubDone(sub)
         updated.subItems = updated.subItems.map { $0 == sub ? item.toggledSub(sub) : $0 }
-        let anyDone = updated.subItems.contains { updated.isSubDone($0) }
 
         let inFollowup = day.followup.contains { $0.id == item.id }
         let inCompleted = day.completed.contains { $0.id == item.id }
 
         if inFollowup {
             day.followup.removeAll { $0.id == item.id }
-            if !day.completed.contains(where: { $0.id == item.id }) {
-                day.completed.append(updated)
-            }
-        } else if inCompleted {
-            day.completed.removeAll { $0.id == item.id }
-            if anyDone {
+            if updated.isFullyComplete {
                 if !day.completed.contains(where: { $0.id == item.id }) {
                     day.completed.append(updated)
                 }
             } else {
-                if !day.followup.contains(where: { $0.id == item.id }) {
-                    day.followup.append(updated)
-                }
+                day.followup.append(updated)
+            }
+        } else if inCompleted {
+            day.completed.removeAll { $0.id == item.id }
+            if updated.isFullyComplete {
+                day.completed.append(updated)
+            } else {
+                day.followup.append(updated)
             }
         }
         persist("subtask \(wasDone ? "restore" : "done") \(updated.display)")
