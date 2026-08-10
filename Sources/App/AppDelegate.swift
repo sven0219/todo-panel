@@ -143,9 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 clockedOut: service.clockOutTime != nil
             )
             let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "TodoPanel")?
-                .withSymbolConfiguration(config)
-            button.image?.isTemplate = true
+            if let base = NSImage(systemSymbolName: symbol, accessibilityDescription: "TodoPanel") {
+                button.image = base.withSymbolConfiguration(config) ?? base
+                button.image?.isTemplate = true
+            }
             button.imagePosition = .imageLeading
             if service.isWorking {
                 button.title = " \(service.workedHoursText)"

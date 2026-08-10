@@ -21,8 +21,26 @@ enum MiniFloatLayout {
 /// Menu-bar and mini-float status symbols.
 enum WorkStatusSymbol {
     static func name(isWorking: Bool, clockedOut: Bool) -> String {
-        if isWorking { return "figure.and.laptop" }
-        if clockedOut { return "figure.wave" }
-        return "figure.stand"
+        if isWorking {
+            return resolve(
+                "figure.and.laptop",
+                "figure.seated.side",
+                "laptopcomputer"
+            )
+        }
+        if clockedOut {
+            return resolve("figure.wave", "figure.walk.departure")
+        }
+        return resolve("figure.stand", "person.fill")
+    }
+
+    /// Pick the first SF Symbol that exists on this macOS version.
+    private static func resolve(_ candidates: String...) -> String {
+        for name in candidates {
+            if NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil {
+                return name
+            }
+        }
+        return candidates.last ?? "person.fill"
     }
 }
