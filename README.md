@@ -162,4 +162,4 @@ MIT
 
 ## Acknowledgements
 
-This project's code was entirely written by [opencode](https://opencode.ai) with the DeepSeek V4 Flash model.
+This project's code was written with [opencode](https://opencode.ai) (DeepSeek V4 Flash) and [Cursor](https://cursor.com).
