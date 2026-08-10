@@ -135,7 +135,7 @@ struct MiniFloatView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "checkmark.seal.fill")
+            Image(systemName: statusSymbol)
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(statusColor)
             if service.isWorking || service.clockOutTime != nil {
@@ -150,6 +150,10 @@ struct MiniFloatView: View {
         .overlay(Capsule().strokeBorder(Palette.separator, lineWidth: 0.5))
         .frame(width: MiniFloatLayout.size.width, height: MiniFloatLayout.size.height)
         .help(I18n.t("点击展开面板", "Click to expand panel"))
+    }
+
+    private var statusSymbol: String {
+        WorkStatusSymbol.name(isWorking: service.isWorking, clockedOut: service.clockOutTime != nil)
     }
 
     private var statusColor: Color {

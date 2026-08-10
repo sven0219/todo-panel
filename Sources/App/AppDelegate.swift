@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hostingView: NSHostingView<ContentView>!
     private var flushTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
-    private var statusIcon: NSImage?
     private let panelSize = NSSize(width: 360, height: 540)
     private var savedExpandedFrame: NSRect?
     /// Mini pill origin relative to expanded panel (preserved when user drags the expanded window).
@@ -139,7 +138,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusItem() {
         guard let button = statusItem?.button, let service else { return }
         Task { @MainActor in
-            button.image = statusIcon
+            let symbol = WorkStatusSymbol.name(
+                isWorking: service.isWorking,
+                clockedOut: service.clockOutTime != nil
+            )
+            let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "TodoPanel")?
+                .withSymbolConfiguration(config)
+            button.image?.isTemplate = true
             button.imagePosition = .imageLeading
             if service.isWorking {
                 button.title = " \(service.workedHoursText)"
@@ -382,9 +388,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            statusIcon = NSImage(systemSymbolName: "checkmark.seal.fill", accessibilityDescription: nil)
-            statusIcon?.isTemplate = true
-            button.image = statusIcon
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(togglePanel)
