@@ -1,0 +1,70 @@
+name: Issue
+description: Report a bug, request a feature, or ask a question
+title: "[Issue]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in as much detail as you can.
+        感谢反馈，请尽量填写完整信息。
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type / 类型
+      options:
+        - Bug / 缺陷
+        - Feature request / 功能建议
+        - Question / 使用问题
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / 描述
+      description: What happened, or what would you like to see? / 发生了什么，或你希望实现什么？
+      placeholder: |
+        Bug: After clock-out, today's todos were not moved to tomorrow.
+        缺陷：下班打卡后，今天的待办没有移到明天。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: For bugs only. / 仅缺陷填写。
+      placeholder: |
+        1. Enable mini float
+        2. Clock out with unfinished todos
+        3. ...
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: TodoPanel version / 版本
+      description: e.g. v0.1.6, local build, or commit SHA
+      placeholder: v0.1.6
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: macOS version, app install method, repo setup if relevant
+      placeholder: macOS 15.6, TodoPanel.app from Releases, repo at ~/work/todo
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context / 补充信息
+      description: Logs, screenshots, week file snippets, etc.
+    validations:
+      required: false
