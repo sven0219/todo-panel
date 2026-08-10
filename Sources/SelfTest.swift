@@ -5,6 +5,7 @@ import AppKit
 enum SelfTest {
     /// Render off-screen screenshots of the main UI states for documentation.
     /// Usage: TodoPanel --screenshot <outDir> --repo <path-to-demo-repo>
+    /// Writes English PNGs to `<outDir>/` and Chinese PNGs to `<outDir>/zh/`.
     @MainActor
     static func renderScreenshots(outDir: String) {
         let repo = argValue("--repo") ?? FileManager.default.currentDirectoryPath
@@ -13,16 +14,32 @@ enum SelfTest {
             print("screenshot: bad repo \(repo)")
             exit(1)
         }
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+        let zhDir = (outDir as NSString).appendingPathComponent("zh")
+        try? fm.createDirectory(atPath: zhDir, withIntermediateDirectories: true)
+
+        renderScreenshotSet(outDir: outDir, service: svc, language: .en)
+        renderScreenshotSet(outDir: zhDir, service: svc, language: .zh)
+    }
+
+    @MainActor
+    private static func renderScreenshotSet(outDir: String, service: TodoService, language: I18n.Language) {
+        service.setLanguageMode(language)
+        service.setWeekMode(false)
+        service.setMiniFloatEnabled(false)
+        service.setPanelExpanded(true)
+
         let demoDay = DateComponents(calendar: .current, year: 2026, month: 6, day: 10).date!
-        svc.goToDay(demoDay)
-        render(ContentView(service: svc), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-day.png")
-        svc.setWeekMode(true)
-        render(ContentView(service: svc), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-week.png")
-        render(SettingsPopover(service: svc), size: CGSize(width: 340, height: 520), to: "\(outDir)/todo-settings.png")
-        svc.setWeekMode(false)
-        svc.setMiniFloatEnabled(true)
-        svc.setPanelExpanded(false)
-        render(ContentView(service: svc), size: CGSize(width: 96, height: 48), to: "\(outDir)/todo-mini.png")
+        service.goToDay(demoDay)
+        render(ContentView(service: service), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-day.png")
+        service.setWeekMode(true)
+        render(ContentView(service: service), size: CGSize(width: 360, height: 640), to: "\(outDir)/todo-week.png")
+        render(SettingsPopover(service: service), size: CGSize(width: 340, height: 520), to: "\(outDir)/todo-settings.png")
+        service.setWeekMode(false)
+        service.setMiniFloatEnabled(true)
+        service.setPanelExpanded(false)
+        render(ContentView(service: service), size: CGSize(width: 96, height: 48), to: "\(outDir)/todo-mini.png")
     }
 
     @MainActor

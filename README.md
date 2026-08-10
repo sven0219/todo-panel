@@ -1,8 +1,12 @@
 # TodoPanel
 
+[中文](README.zh-CN.md)
+
 A macOS menu-bar app with a floating panel for daily todo logging. It reads and writes markdown week files in your own git repository and auto-commits/pushes changes.
 
 Clock in, manage todos, clock out — your data stays plain markdown under your control.
+
+> **Menu-bar clock-in, markdown todos, automatic git sync — all data stays in your own repository.**
 
 ## Features
 
@@ -14,7 +18,7 @@ Clock in, manage todos, clock out — your data stays plain markdown under your 
 
 ### Todo management
 - **Day view**: Todo / Unfinished / Done sections with add, edit, delete, reorder, and mark-done
-- **Subtasks**: toggle individually; completing any subtask moves the parent to Done
+- **Subtasks**: toggle individually; the parent moves to Done only when every subtask is complete
 - **Week view**: browse each day's clock record, todo counts, and completion stats; click a day to jump back to day view
 - **Project autocomplete** from historical project names
 
@@ -42,7 +46,7 @@ Clock in, manage todos, clock out — your data stays plain markdown under your 
 | --- | --- |
 | ![Settings](docs/images/todo-settings.png) | ![Mini float](docs/images/todo-mini.png) |
 
-Regenerate screenshots after UI changes:
+Regenerate screenshots after UI changes (writes English to `docs/images/` and Chinese to `docs/images/zh/`):
 
 ```bash
 swift run TodoPanel --screenshot docs/images --repo example
