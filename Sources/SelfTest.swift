@@ -321,17 +321,17 @@ enum SelfTest {
                 ScheduledTaskConfig(project: "A", text: "one", weekday: 2, monthDay: nil)
             ]
             AppConfig.shared = cfg
-            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            try AppConfig.save(cfg, repoPath: cfgStore.repoPath, configPath: cfgURL)
             AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
             check(AppConfig.shared.scheduledTasks.count == 1, "config: save/load tasks")
             AppConfig.shared.scheduledTasks.append(
                 ScheduledTaskConfig(project: "B", text: "two", weekday: nil, monthDay: 15)
             )
-            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            try AppConfig.save(AppConfig.shared, repoPath: cfgStore.repoPath, configPath: cfgURL)
             AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
             check(AppConfig.shared.scheduledTasks.count == 2, "config: append task")
             AppConfig.shared.scheduledTasks.removeAll { $0.project == "A" }
-            try AppConfig.save(repoPath: cfgStore.repoPath, configPath: cfgURL)
+            try AppConfig.save(AppConfig.shared, repoPath: cfgStore.repoPath, configPath: cfgURL)
             AppConfig.load(repoPath: cfgStore.repoPath, configPath: cfgURL)
             check(AppConfig.shared.scheduledTasks.count == 1 && AppConfig.shared.scheduledTasks[0].project == "B",
                   "config: delete task")

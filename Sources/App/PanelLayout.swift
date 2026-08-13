@@ -11,6 +11,8 @@ struct ContentHeightKey: PreferenceKey {
 
 extension Notification.Name {
     static let panelContentHeightChanged = Notification.Name("panelContentHeightChanged")
+    static let miniFloatExpandRequested = Notification.Name("miniFloatExpandRequested")
+    static let settingsPopoverVisibilityChanged = Notification.Name("settingsPopoverVisibilityChanged")
 }
 
 /// Collapsed mini-float pill size (must match `MiniFloatView` frame).

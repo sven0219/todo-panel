@@ -4,7 +4,7 @@ struct WeeklySummary {
 
     /// On Monday, if last week's summary is missing, generate and prepend it.
     /// Returns the summary text if one was written.
-    static func ensure(forToday today: Date, store: WeekStore, push: Bool? = nil) throws -> String? {
+    static func ensure(forToday today: Date, store: WeekStore, push: Bool? = nil, messagePrefix: String) throws -> String? {
         let cal = Calendar.current
         guard cal.component(.weekday, from: today) == 2 else { return nil }
 
@@ -30,7 +30,7 @@ struct WeeklySummary {
         } else {
             text += "## \(heading)\n\n" + summary + "\n"
         }
-        try store.saveSummary(text, message: AppConfig.commitMessage("add README summary for \(py)-W\(pw)"), push: push)
+        try store.saveSummary(text, message: "\(messagePrefix) add README summary for \(py)-W\(pw)", push: push)
         return summary
     }
 

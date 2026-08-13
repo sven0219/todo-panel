@@ -59,6 +59,25 @@ struct TodoConfig: Codable, Equatable {
     static let `default` = TodoConfig()
 }
 
+extension TodoConfig {
+    private enum CodingKeys: String, CodingKey {
+        case appName, locations, scheduledTasks, commitMessagePrefix, defaultLanguage
+    }
+
+    /// Decode each field independently so a config file missing any key still loads,
+    /// using the built-in default for that key only. Empty `locations`/`scheduledTasks`
+    /// arrays are preserved (a user can genuinely want zero).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let def = TodoConfig.default
+        appName = (try c.decodeIfPresent(String.self, forKey: .appName)).flatMap { $0.isEmpty ? nil : $0 } ?? def.appName
+        locations = try c.decodeIfPresent([String].self, forKey: .locations) ?? def.locations
+        scheduledTasks = try c.decodeIfPresent([ScheduledTaskConfig].self, forKey: .scheduledTasks) ?? def.scheduledTasks
+        commitMessagePrefix = (try c.decodeIfPresent(String.self, forKey: .commitMessagePrefix)).flatMap { $0.isEmpty ? nil : $0 } ?? def.commitMessagePrefix
+        defaultLanguage = (try c.decodeIfPresent(String.self, forKey: .defaultLanguage)).flatMap { $0.isEmpty ? nil : $0 } ?? def.defaultLanguage
+    }
+}
+
 /// Global config loaded from `todo.config.json`; defaults when absent.
 enum AppConfig {
     static var shared = TodoConfig.default
@@ -87,22 +106,15 @@ enum AppConfig {
             shared = .default
             return
         }
-        let def = TodoConfig.default
-        shared = TodoConfig(
-            appName: decoded.appName.isEmpty ? def.appName : decoded.appName,
-            locations: decoded.locations.isEmpty ? def.locations : decoded.locations,
-            scheduledTasks: decoded.scheduledTasks.isEmpty ? def.scheduledTasks : decoded.scheduledTasks,
-            commitMessagePrefix: decoded.commitMessagePrefix.isEmpty ? def.commitMessagePrefix : decoded.commitMessagePrefix,
-            defaultLanguage: decoded.defaultLanguage.isEmpty ? def.defaultLanguage : decoded.defaultLanguage
-        )
+        shared = decoded
     }
 
-    /// Write the in-memory config to disk.
-    static func save(repoPath: String, configPath: String?) throws {
+    /// Write the given config to disk (no reliance on the global, so it is safe to call off-main).
+    static func save(_ config: TodoConfig, repoPath: String, configPath: String?) throws {
         let url = configURL(repoPath: repoPath, configPath: configPath)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(shared)
+        let data = try encoder.encode(config)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true

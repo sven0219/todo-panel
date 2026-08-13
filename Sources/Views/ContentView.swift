@@ -149,6 +149,10 @@ struct MiniFloatView: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.separator, lineWidth: 0.5))
         .frame(width: MiniFloatLayout.size.width, height: MiniFloatLayout.size.height)
+        .contentShape(Capsule())
+        .onTapGesture {
+            NotificationCenter.default.post(name: .miniFloatExpandRequested, object: nil)
+        }
         .help(I18n.t("点击展开面板", "Click to expand panel"))
     }
 
@@ -217,6 +221,13 @@ struct HeaderBar: View {
             .help(I18n.t("设置", "Settings"))
             .popover(isPresented: $showingSettings) {
                 SettingsPopover(service: service)
+            }
+            .onChange(of: showingSettings) { _, visible in
+                NotificationCenter.default.post(
+                    name: .settingsPopoverVisibilityChanged,
+                    object: nil,
+                    userInfo: ["visible": visible]
+                )
             }
 
             Button(action: { NSApp.terminate(nil) }) {
@@ -353,7 +364,6 @@ struct SettingsPopover: View {
 
 struct ClockBar: View {
     @ObservedObject var service: TodoService
-    @State private var now = Date()
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -428,7 +438,7 @@ struct ClockBar: View {
                         .foregroundStyle(Palette.clockOut)
                 }
             }
-            .onReceive(refreshTimer) { _ in now = Date() }
+            .onReceive(refreshTimer) { _ in service.objectWillChange.send() }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

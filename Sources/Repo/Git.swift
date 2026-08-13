@@ -86,8 +86,16 @@ final class GitManager {
     }
 
     /// Pull with rebase, then push pending commits. Transient failures are retried up to 3
-    /// times; conflicts raise a clear, actionable error.
+    /// times; conflicts raise a clear, actionable error. A branch with no upstream gets
+    /// pushed with `-u` first.
     func push() throws {
+        let hasUpstream = run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).status == 0
+        if !hasUpstream {
+            let retry = run(["push", "-u", "origin", "HEAD"])
+            if retry.status == 0 { return }
+            throw GitError(message: "git push -u 失败：\n\(Self.summarize(retry.output))")
+        }
+
         var lastMessage = ""
         for attempt in 0..<3 {
             let pull = run(["pull", "--rebase"])
@@ -105,13 +113,6 @@ final class GitManager {
 
             if Self.isConflict(push.output) {
                 throw GitError(message: "推送被远端拒绝（远端可能有更新），请手动处理：\n\(Self.summarize(push.output))")
-            }
-
-            let hasUpstream = run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).status == 0
-            if !hasUpstream {
-                let retry = run(["push", "-u", "origin", "HEAD"])
-                if retry.status == 0 { return }
-                throw GitError(message: "git push -u 失败：\n\(Self.summarize(retry.output))")
             }
 
             lastMessage = push.output

@@ -110,6 +110,8 @@ final class TodoService: ObservableObject {
         let now = Date()
         guard !DateMath.isSameDay(today, now) else { return }
         today = now
+        viewDate = now
+        if !isSyncing { loadDay() }
     }
 
     func setImmediatePush(_ value: Bool) {
@@ -238,7 +240,7 @@ final class TodoService: ObservableObject {
 
         syncQueue.async { [weak self] in
             do {
-                try AppConfig.save(repoPath: store.repoPath, configPath: configPath)
+                try AppConfig.save(config, repoPath: store.repoPath, configPath: configPath)
                 if let rel = AppConfig.relativePathInRepo(repoPath: store.repoPath, configPath: configPath) {
                     try store.commit(paths: [rel], message: message, push: push)
                 }
@@ -249,8 +251,8 @@ final class TodoService: ObservableObject {
                     )
                 }
             } catch {
-                AppConfig.shared = backup
                 Task { @MainActor [weak self] in
+                    AppConfig.shared = backup
                     self?.scheduledTasks = backup.scheduledTasks
                     self?.completeSync(error: error, refreshPending: false)
                 }
@@ -370,6 +372,8 @@ final class TodoService: ObservableObject {
         beginSync()
         let store = store
         let date = viewDate
+        let message = AppConfig.commitMessage("clock in \(TodoRules.timeNow()) at \(location)")
+        let prefix = AppConfig.shared.commitMessagePrefix
 
         syncQueue.async { [weak self] in
             do {
@@ -382,8 +386,8 @@ final class TodoService: ObservableObject {
                 )
                 var weeks = [week]
                 if let prev = result.prevWeekToSave { weeks.append(prev) }
-                try store.save(weeks, message: AppConfig.commitMessage("clock in \(TodoRules.timeNow()) at \(location)"))
-                _ = try? WeeklySummary.ensure(forToday: date, store: store)
+                try store.save(weeks, message: message)
+                _ = try? WeeklySummary.ensure(forToday: date, store: store, messagePrefix: prefix)
 
                 var notices: [String] = []
                 if !result.scheduledTasksAdded.isEmpty {
@@ -410,6 +414,7 @@ final class TodoService: ObservableObject {
         beginSync()
         let store = store
         let date = viewDate
+        let prefix = AppConfig.shared.commitMessagePrefix
 
         syncQueue.async { [weak self] in
             do {
@@ -417,8 +422,9 @@ final class TodoService: ObservableObject {
                 let outResult = try TodoRules.clockOut(today: date, store: store, week: &week)
                 var weeks = [week]
                 if let next = outResult.nextWeekToSave { weeks.append(next) }
-                try store.save(weeks, message: AppConfig.commitMessage("clock out \(outResult.record.clockOut ?? "") duration \(outResult.record.duration ?? "")"))
-                _ = try? WeeklySummary.ensure(forToday: date, store: store)
+                let message = prefix + " clock out \(outResult.record.clockOut ?? "") duration \(outResult.record.duration ?? "")"
+                try store.save(weeks, message: message)
+                _ = try? WeeklySummary.ensure(forToday: date, store: store, messagePrefix: prefix)
                 // Clock-out must push immediately so the follow-up transfer, weekly summary, etc. are all synced.
                 try store.flushPush()
                 self?.finishSync(
@@ -573,12 +579,14 @@ final class TodoService: ObservableObject {
         let snapshot = week
         let store = store
         let date = viewDate
+        let message = AppConfig.commitMessage(label)
+        let prefix = AppConfig.shared.commitMessagePrefix
         beginSync()
 
         syncQueue.async { [weak self] in
             do {
-                try store.save(snapshot, message: AppConfig.commitMessage(label))
-                _ = try? WeeklySummary.ensure(forToday: date, store: store)
+                try store.save(snapshot, message: message)
+                _ = try? WeeklySummary.ensure(forToday: date, store: store, messagePrefix: prefix)
                 self?.finishSync(store: store, date: date, notice: I18n.t("已保存", "Saved"))
             } catch {
                 Logger.log("persist(\(label)) error: \(error.localizedDescription)")
