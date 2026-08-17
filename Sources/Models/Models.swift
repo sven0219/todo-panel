@@ -22,6 +22,8 @@ struct TimeRecord: Codable, Equatable {
     var location: String?
     var clockOut: String?
     var duration: String?
+    /// Leave type for the day (e.g. 年假 / 病假 / 法定假期); nil when working.
+    var leave: String?
 
     var isComplete: Bool {
         clockIn != nil && clockOut != nil

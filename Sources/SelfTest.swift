@@ -336,6 +336,40 @@ enum SelfTest {
             check(AppConfig.shared.scheduledTasks.count == 1 && AppConfig.shared.scheduledTasks[0].project == "B",
                   "config: delete task")
 
+            // Group 6e: leave records round-trip through the time record (not completed)
+            var leaveDay = DayRecord(date: mon)
+            leaveDay.time.leave = "年假"
+            let leaveWeek = WeekFile(year: 2026, week: 33, startDate: mon, endDate: mon, days: [leaveDay])
+            let leaveText = MarkdownCodec.serialize(leaveWeek)
+            check(leaveText.contains("- \(I18n.t("休假", "Leave")): 年假"), "leave: serialized in time record")
+            let leaveParsed = try MarkdownCodec.parse(leaveText, week: 2026, weekNumber: 33, start: mon, end: mon)
+            check(leaveParsed.days.first?.time.leave == "年假", "leave: round-trip text")
+            check(leaveParsed.days.first?.completed.isEmpty == true, "leave: not in completed")
+
+            // Group 6f: legacy leave-as-completed items migrate to the time record
+            let legacyMd = """
+            # 2026-W33 Weekly Log
+
+            ## 2026-08-10 Mon
+
+            ### Completed
+            - 年假
+
+            ## 2026-08-11 Tue
+
+            ### Completed
+            - **病假**
+
+            ### Time Record
+            - 状态: 休病假
+            """
+            let legacyParsed = try MarkdownCodec.parse(legacyMd, week: 2026, weekNumber: 33, start: mon, end: mon)
+            let monLegacy = legacyParsed.days.first(where: { DateMath.isSameDay($0.date, mon) })
+            check(monLegacy?.time.leave == "年假" && monLegacy?.completed.isEmpty == true, "leave: legacy project-less migrates")
+            let tue = Calendar.current.date(byAdding: .day, value: 1, to: mon)!
+            let tueLegacy = legacyParsed.days.first(where: { DateMath.isSameDay($0.date, tue) })
+            check(tueLegacy?.time.leave == "病假" && tueLegacy?.completed.isEmpty == true, "leave: legacy bare-project and 状态 migrate")
+
             // Group 7: serialize real sample stays parseable
             if let sample = try? String(contentsOfFile: samplePath, encoding: .utf8) {
                 let parsed = try MarkdownCodec.parse(sample, week: 2026, weekNumber: 32,

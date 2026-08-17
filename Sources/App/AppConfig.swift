@@ -43,6 +43,7 @@ struct ScheduledTaskConfig: Codable, Equatable, Identifiable {
 struct TodoConfig: Codable, Equatable {
     var appName = "TodoPanel"
     var locations: [String] = ["PG", "Marriott", "Remote"]
+    var leaveTypes: [String] = ["年假", "病假", "法定假期"]
     var scheduledTasks: [ScheduledTaskConfig] = TodoConfig.defaultTasks
     var commitMessagePrefix = "update:"
     var defaultLanguage = "system" // system | zh | en
@@ -61,7 +62,7 @@ struct TodoConfig: Codable, Equatable {
 
 extension TodoConfig {
     private enum CodingKeys: String, CodingKey {
-        case appName, locations, scheduledTasks, commitMessagePrefix, defaultLanguage
+        case appName, locations, leaveTypes, scheduledTasks, commitMessagePrefix, defaultLanguage
     }
 
     /// Decode each field independently so a config file missing any key still loads,
@@ -72,6 +73,7 @@ extension TodoConfig {
         let def = TodoConfig.default
         appName = (try c.decodeIfPresent(String.self, forKey: .appName)).flatMap { $0.isEmpty ? nil : $0 } ?? def.appName
         locations = try c.decodeIfPresent([String].self, forKey: .locations) ?? def.locations
+        leaveTypes = try c.decodeIfPresent([String].self, forKey: .leaveTypes) ?? def.leaveTypes
         scheduledTasks = try c.decodeIfPresent([ScheduledTaskConfig].self, forKey: .scheduledTasks) ?? def.scheduledTasks
         commitMessagePrefix = (try c.decodeIfPresent(String.self, forKey: .commitMessagePrefix)).flatMap { $0.isEmpty ? nil : $0 } ?? def.commitMessagePrefix
         defaultLanguage = (try c.decodeIfPresent(String.self, forKey: .defaultLanguage)).flatMap { $0.isEmpty ? nil : $0 } ?? def.defaultLanguage

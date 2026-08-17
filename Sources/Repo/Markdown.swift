@@ -22,7 +22,14 @@ enum MarkdownCodec {
             }
             let items = parseTodoLines(lineBuffer)
             switch cat {
-            case .completed: day.completed.append(contentsOf: items)
+            case .completed:
+                for item in items {
+                    if let leave = Self.leaveType(from: item) {
+                        if day.time.leave == nil { day.time.leave = leave }
+                    } else {
+                        day.completed.append(item)
+                    }
+                }
             case .uncompleted: day.uncompleted.append(contentsOf: items)
             case .followup: day.followup.append(contentsOf: items)
             case .timeRecord: day.time = parseTimeRecord(lineBuffer)
@@ -84,6 +91,7 @@ enum MarkdownCodec {
                 if day.time.location != nil { existing.time.location = day.time.location }
                 if day.time.clockOut != nil { existing.time.clockOut = day.time.clockOut }
                 if day.time.duration != nil { existing.time.duration = day.time.duration }
+                if day.time.leave != nil { existing.time.leave = day.time.leave }
                 byDay[key] = existing
             } else {
                 byDay[key] = day
@@ -118,6 +126,54 @@ enum MarkdownCodec {
             case .timeRecord: return I18n.t("时间记录", "Time Record")
             }
         }
+    }
+
+    /// Detect whether a completed item is actually a leave record (legacy data stored
+    /// leave as a plain completed line, e.g. `- 年假`, `- 休假`, or `- **病假**`).
+    /// Returns a normalized leave type string, or nil for a normal todo item.
+    private static func leaveType(from item: TodoItem) -> String? {
+        if item.project.isEmpty {
+            return normalizeLeave(item.text)
+        }
+        if item.text.isEmpty {
+            return normalizeLeave(item.project)
+        }
+        return nil
+    }
+
+    /// Normalize free-form leave text (e.g. `状态: 休病假`, `公共假期，端午节`,
+    /// `Sick Leave`, `Public Holiday`) into a canonical leave type matching the
+    /// configured `leaveTypes` where possible. Bilingual: matches zh and en keywords.
+    private static func normalizeLeave(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty else { return nil }
+        for prefix in ["状态:", "状态：", "Status:", "Status："] {
+            if s.hasPrefix(prefix) {
+                s = String(s.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+        guard !s.isEmpty else { return nil }
+        let configured = AppConfig.shared.leaveTypes
+        if configured.contains(s) { return s }
+        let lower = s.lowercased()
+        // Ordered from most specific to least specific.
+        let categories: [(keywords: [String], fallback: String)] = [
+            (["病假", "sick"], "病假"),
+            (["年假", "annual"], "年假"),
+            (["法定", "公共假期", "节假日", "public holiday", "statutory"], "法定假期"),
+            (["假期", "休假", "leave", "假", "休"], "年假"),
+        ]
+        for cat in categories {
+            if cat.keywords.contains(where: { lower.contains($0.lowercased()) }) {
+                return pickLeave(cat.fallback, from: configured)
+            }
+        }
+        return nil
+    }
+
+    private static func pickLeave(_ keyword: String, from configured: [String]) -> String {
+        configured.first(where: { $0.localizedCaseInsensitiveContains(keyword) }) ?? keyword
     }
 
     private static func parseTodoLines(_ lines: [String]) -> [TodoItem] {
@@ -170,6 +226,9 @@ enum MarkdownCodec {
             case "下班", "Clock-out": record.clockOut = value
             case "时长", "Duration": record.duration = value
             case "地点", "Location": record.location = value
+            case "休假", "Leave": record.leave = value
+            case "状态", "Status":
+                if let leave = Self.normalizeLeave(value) { record.leave = leave }
             default: break
             }
         }
@@ -218,7 +277,14 @@ enum MarkdownCodec {
 
     private static func serializeItem(_ item: TodoItem) -> [String] {
         var lines: [String] = []
-        let bullet = item.text.isEmpty ? "- **\(item.project)**" : "- **\(item.project)** - \(item.text)"
+        let bullet: String
+        if item.project.isEmpty {
+            bullet = "- \(item.text)"
+        } else if item.text.isEmpty {
+            bullet = "- **\(item.project)**"
+        } else {
+            bullet = "- **\(item.project)** - \(item.text)"
+        }
         lines.append(bullet)
         for sub in item.subItems { lines.append("  - \(sub)") }
         return lines
@@ -226,6 +292,7 @@ enum MarkdownCodec {
 
     private static func serializeTime(_ time: TimeRecord) -> [String]? {
         var lines: [String] = []
+        if let leave = time.leave { lines.append("- \(I18n.t("休假", "Leave")): \(leave)") }
         if let inTime = time.clockIn { lines.append("- \(I18n.t("上班", "Clock-in")): \(inTime)") }
         if let loc = time.location { lines.append("- \(I18n.t("地点", "Location")): \(loc)") }
         if let out = time.clockOut { lines.append("- \(I18n.t("下班", "Clock-out")): \(out)") }

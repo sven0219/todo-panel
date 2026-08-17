@@ -35,10 +35,11 @@ struct WeekView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(DayName.heading(day.date))
                                 .font(.body.weight(.semibold))
-                            Text(I18n.t("待办 \(day.followup.count) · 未完成 \(day.uncompleted.count)",
-                                        "Todo \(day.followup.count) · Unfinished \(day.uncompleted.count)"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if let leave = day.time.leave {
+                                Text(I18n.t("休假：\(leave)", "Leave: \(leave)"))
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.clockOut)
+                            }
                             if day.time.clockIn != nil {
                                 HStack(spacing: 10) {
                                     Text(I18n.t("上班 \(day.time.clockIn ?? "--:--")", "In \(day.time.clockIn ?? "--:--")"))
@@ -54,9 +55,6 @@ struct WeekView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text(I18n.t("完成 \(day.completed.count)", "Done \(day.completed.count)"))
-                                .font(.caption)
-                                .foregroundStyle(Palette.completed)
                             if let dur = day.time.duration {
                                 Text(dur)
                                     .font(.caption.weight(.semibold))

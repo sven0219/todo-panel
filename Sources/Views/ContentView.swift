@@ -372,6 +372,9 @@ struct ClockBar: View {
                 if DateMath.isSameDay(service.viewDate, service.today) {
                     if !service.isWorking {
                         ClockInButton(service: service)
+                        if !service.leaveTypes.isEmpty {
+                            LeaveButton(service: service)
+                        }
                     } else {
                         ClockOutButton(service: service)
                     }
@@ -437,6 +440,15 @@ struct ClockBar: View {
                         .background(Palette.clockOut.opacity(0.12), in: Capsule())
                         .foregroundStyle(Palette.clockOut)
                 }
+
+                if !service.weekMode, let leave = service.leaveType {
+                    Text(I18n.t("休假：\(leave)", "Leave: \(leave)"))
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Palette.clockOut.opacity(0.12), in: Capsule())
+                        .foregroundStyle(Palette.clockOut)
+                }
             }
             .onReceive(refreshTimer) { _ in service.objectWillChange.send() }
         }
@@ -465,6 +477,29 @@ struct ClockInButton: View {
             }
         } message: {
             Text(I18n.t("今天在哪办公？", "Where are you working today?"))
+        }
+    }
+}
+
+struct LeaveButton: View {
+    @ObservedObject var service: TodoService
+    @State private var showingTypes = false
+
+    var body: some View {
+        Button {
+            showingTypes = true
+        } label: {
+            Label(I18n.t("休假", "Leave"), systemImage: "sun.max")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(service.isSyncing)
+        .confirmationDialog(I18n.t("选择休假类型", "Select leave type"), isPresented: $showingTypes, titleVisibility: .visible) {
+            ForEach(service.leaveTypes, id: \.self) { type in
+                Button(type) { service.markLeave(type) }
+            }
+        } message: {
+            Text(I18n.t("今天休哪种假？", "What type of leave?"))
         }
     }
 }

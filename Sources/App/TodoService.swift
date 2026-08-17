@@ -102,7 +102,9 @@ final class TodoService: ObservableObject {
     var clockOutTime: String? { day.time.clockOut }
     var duration: String? { day.time.duration }
     var locationName: String? { day.time.lastLocationName }
+    var leaveType: String? { day.time.leave }
     var locations: [String] { AppConfig.shared.locations }
+    var leaveTypes: [String] { AppConfig.shared.leaveTypes }
     var appName: String { AppConfig.shared.appName }
 
     /// Advance the today anchor when the calendar day rolls over (menu-bar apps stay open overnight).
@@ -365,6 +367,15 @@ final class TodoService: ObservableObject {
     }
 
     // MARK: - Clock
+
+    /// Mark today as leave of the given type. Recorded in the time record
+    /// (e.g. `- 休假: 年假`); re-marking the same day replaces the previous entry.
+    func markLeave(_ type: String) {
+        guard !isSyncing else { return }
+        day.time.leave = type
+        day.completed.removeAll { $0.project.isEmpty && !$0.text.isEmpty }
+        persist("mark leave \(type)")
+    }
 
     func clockIn(location: String) {
         guard !isSyncing else { return }
